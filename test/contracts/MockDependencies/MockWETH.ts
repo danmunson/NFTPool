@@ -128,6 +128,7 @@ describe('MockWETH', async () => {
             }
             assert.strictEqual(fsig.length, badfsig.length);
             await expect(mockWeth.executeMetaTransaction(
+                // should be r, s, v
                 testSender.address, badfsig, r, s, v
             )).to.be.revertedWith('Signer and signature do not match');
         });

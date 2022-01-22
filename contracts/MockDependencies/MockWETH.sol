@@ -371,6 +371,9 @@ contract MockWETH is NativeMetaTransaction {
         return balances[user];
     }
 
+    // just here for testing purposes
+    function approve(address recipient, uint256 amount) public {}
+
     /*
     Fake transfer function - only needed to test that "executeMetaTransaction" works
     As such, no need to check sender balance, just add amount to recipient account
