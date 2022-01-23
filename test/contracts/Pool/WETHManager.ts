@@ -79,10 +79,28 @@ describe('WETHManager', async () => {
         const mainBalanceDiff = mainEndingBalance.sub(mainStartingBalance);
         // confirm balance transfer
         assert.equal(mainBalanceDiff.toString(), TRANSFER_AMOUNT.toString());
+    });
 
-        await expect(
-            wethManager.connect(altAcct).transfer(mainAcct.address, TRANSFER_AMOUNT)
-        ).to.be.revertedWith('Must be admin');
+    describe('admin', async () => {
+        it('only admin can transfer', async () => {
+            await expect(
+                wethManager.connect(altAcct).transfer(mainAcct.address, TRANSFER_AMOUNT)
+            ).to.be.revertedWith('Must be admin');
+        });
+
+        it('only admin can forwardMetaTx', async () => {
+            const message = await getMessage(testSender.address, wethManager.address);
+            const typedData = getTypedData({...message, ...domainConstants});
+            const signature = signMetaTxTypedData(typedData, testSender.privateKey);
+            const {r, s, v} = getSignatureParameters(signature);
+            await expect(
+                wethManager.connect(altAcct).forwardMetaTransaction(
+                    TRANSFER_AMOUNT, // expected amount
+                    testSender.address,
+                    typedData.message.functionSignature,
+                    r, s, v,
+            )).to.be.revertedWith('Must be admin');
+        });
     });
 
     describe('validates function call', async () => {
