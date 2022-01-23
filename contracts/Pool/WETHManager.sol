@@ -50,13 +50,13 @@ contract WETHManager {
         bytes32 _mtx_sigR,
         bytes32 _mtx_sigS,
         uint8 _mtx_sigV
-    ) external onlyAdmin returns (bool) {
+    ) external onlyAdmin {
         validateFunctionCall(_expectedAmount, _mtx_functionSignature);
         // WETH will revert on any issues
         weth.executeMetaTransaction(_mtx_userAddress, _mtx_functionSignature, _mtx_sigR, _mtx_sigS, _mtx_sigV);
     }
 
-    function transfer(address _to, uint256 _amount) external onlyAdmin returns (bool) {
+    function transfer(address _to, uint256 _amount) external onlyAdmin {
         // WETH will revert on any issues
         weth.transfer(_to, _amount);
     }
