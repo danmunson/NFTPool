@@ -1,13 +1,83 @@
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 import { expect, assert } from "chai";
 import { ethers } from "hardhat";
-import { MockNFT, NFTDispenser } from "../../../typechain";
+import { NFTDispenser, MockERC1155, MockERC721 } from "../../../typechain";
+
+type Token = {
+    address: string,
+    tokenId: number,
+    isErc1155: boolean,
+};
 
 describe('NFTDispenser', async () => {
     let mainAcct: SignerWithAddress;
     let altAcct: SignerWithAddress;
     let nftDispenser: NFTDispenser;
-    let nfts: MockNFT[];
+    let erc721: MockERC721;
+    let erc1155: MockERC1155;
+    let tokens: Token[];
+
+    async function transfer(
+        token: Token, from: string, to: string, erc721UnsafeTransfer?: boolean
+    ) {
+        let transferTx: any;
+        if (token.isErc1155) {
+            transferTx = await erc1155.safeTransferFrom(from, to, token.tokenId, 1, '0x'); 
+        } else {
+            if (erc721UnsafeTransfer) {
+                transferTx = await erc721['safeTransferFrom(address,address,uint256)'](from, to, token.tokenId);
+            } else {
+                transferTx = await erc721.transferFrom(from, to, token.tokenId);
+            }
+        }
+        await transferTx.wait();
+    }
+
+    /*
+    transfers a token and sets it's tier.
+        * NOTE: implicitly tests the onXYZReceived functionality
+    */
+    async function transferAndSetTier(token: Token, tier: number) {
+        await transfer(token, mainAcct.address, nftDispenser.address);
+        const tierTx = await nftDispenser.setTier(
+            token.address,
+            token.tokenId,
+            token.isErc1155,
+            tier
+        );
+        await tierTx.wait();
+    }
+
+    async function initializeTokens(sameTier: boolean) {
+        let count = 0;
+        for (const token of tokens) {
+            const tier = sameTier ? 0 : count;
+            await transferAndSetTier(token, tier);
+            count++;
+        }
+    }
+
+    async function ownsToken(address: string, token: Token): Promise<boolean> {
+        if (token.isErc1155) {
+            const balance = await erc1155.balanceOf(address, token.tokenId);
+            return balance.toNumber() > 0;
+        } else {
+            const owner = await erc721.ownerOf(token.tokenId);
+            return owner === address;
+        }
+    }
+
+    async function getNftInfo(token: Token) {
+        const info = await nftDispenser.getNftInfo(token.address, token.tokenId);
+        return {
+            address: info[0],
+            tokenId: info[1].toNumber(),
+            isErc1155: info[2],
+            quantity: info[3].toNumber(),
+            tier: info[4],
+            index: info[5].toNumber(),
+        }
+    }
 
     before(async () => {
         const signers = await ethers.getSigners();
@@ -20,277 +90,123 @@ describe('NFTDispenser', async () => {
         nftDispenser = await NFTDispenser.deploy(mainAcct.address);
         await nftDispenser.deployed();
 
-        const MockNFT = await ethers.getContractFactory("MockNFT");
-        nfts = await Promise.all([1, 2].map(async () => {
-            const nft = await MockNFT.deploy();
-            await nft.deployed();
-            // mint 3 tokens apiece
-            await Promise.all([1, 2, 3].map(async (id) => {
-                const tx = await nft.mint(id);
-                await tx.wait();
-            }));
-            return nft;
-        }))
+        tokens = [];
+
+        const MockERC721 = await ethers.getContractFactory("MockERC721");
+        erc721 = await MockERC721.deploy();
+        await erc721.deployed();
+        for (let i = 1; i <= 3; i ++) {
+            const tx = await erc721.mint(i);
+            await tx.wait();
+            tokens.push({
+                address: erc721.address,
+                tokenId: i,
+                isErc1155: false,
+            });
+        }
+
+        const MockERC1155 = await ethers.getContractFactory("MockERC1155");
+        erc1155 = await MockERC1155.deploy();
+        await erc1155.deployed();
+        // qty = 3, spread out over 2 tokens
+        for (const i of [1, 1, 2]) {
+            const tx = await erc1155.mint(i);
+            await tx.wait();
+            tokens.push({
+                address: erc1155.address,
+                tokenId: i,
+                isErc1155: true,
+            });
+        }
     });
 
-    async function transferAndSetTiers(sameTier: boolean) {
-        // transfer and set tiers
-        await Promise.all(nfts.map(async (nft, idx) => {
-            await Promise.all([1, 2, 3].map(async (tokenId) => {
-                assert.strictEqual(await nft.ownerOf(tokenId), mainAcct.address);
-                const tfTx = await nft.transferFrom(mainAcct.address, nftDispenser.address, tokenId);
-                await tfTx.wait();
-                assert.strictEqual(await nft.ownerOf(tokenId), nftDispenser.address);
-    
-                const tx = await nftDispenser.setTier(
-                    nft.address, tokenId,
-                    sameTier ? 0 : (3 * idx) + tokenId
-                );
-                await tx.wait();
-            }));
-        }));
-    };
+    describe('should accept ownership of nfts', async () => {
+        it('accepts transfers', async () => {
+            await transfer(tokens[0], mainAcct.address, nftDispenser.address); // ERC721
+            assert(await ownsToken(nftDispenser.address, tokens[0]));
 
-    describe('transferring and setting difficulty', async () => {
-        it('can become owner of NFT via transferFrom or safeTransferFrom', async () => {
-            const nft = nfts[0];
+            await transfer(tokens[1], mainAcct.address, nftDispenser.address, true); // ERC721 unsafe transfer
+            assert(await ownsToken(nftDispenser.address, tokens[1]));
 
-            assert.strictEqual(await nft.ownerOf(1), mainAcct.address);
-            const tfTx = await nft.transferFrom(mainAcct.address, nftDispenser.address, 1);
-            await tfTx.wait();
-            assert.strictEqual(await nft.ownerOf(1), nftDispenser.address);
+            await transfer(tokens[5], mainAcct.address, nftDispenser.address); //  ERC1155
+            assert(await ownsToken(nftDispenser.address, tokens[5]));
+        });
+    });
 
-            assert.strictEqual(await nft.ownerOf(2), mainAcct.address);
-            const stfTx = await nft['safeTransferFrom(address,address,uint256)'](mainAcct.address, nftDispenser.address, 2);
-            await stfTx.wait();
-            assert.strictEqual(await nft.ownerOf(2), nftDispenser.address);
+    describe('setTier and view functions', async () => {
+        it('sets tokens in the same tier', async () => {
+            // NOTE: implicit test of setTier
+            await initializeTokens(true);
+
+            const tiers = await nftDispenser.getActiveTiers();
+            assert.strictEqual(tiers.filter((x: boolean) => x).length, 1);
+
+            const nftsInPlay = await nftDispenser.getNftsInPlay();
+            assert.strictEqual(nftsInPlay.toNumber(), 6);
+            
+            for (const token of tokens) {
+                const info = await getNftInfo(token);
+                assert.strictEqual(info.address, token.address);
+                assert.strictEqual(info.tokenId, token.tokenId);
+                assert.strictEqual(info.isErc1155, token.isErc1155);
+
+                // confirm double token
+                assert(!(info.address === erc1155.address && info.tokenId === 1) || info.quantity === 2);
+            }
+
+            const countOfTier0 = await nftDispenser.getIndexesByTier(0);
+            // since one of the tokens has quantity of 2, we only expect 5 indexes
+            assert.strictEqual(countOfTier0.toNumber(), 5);
         });
 
-        it('will not set difficulty if not owner', async () => {
-            const nft = nfts[0];
-            assert.strictEqual(await nft.ownerOf(1), mainAcct.address);
+        it('sets tokens in different tiers, does not change tier of token that already exists', async () => {
+            // NOTE: implicit test of setTier
+            await initializeTokens(false);
+
+            const tiers = await nftDispenser.getActiveTiers();
+            // 5 tiers should be active since one of the NFTs is "duplicated"
+            assert.strictEqual(tiers.filter((x: boolean) => x).length, 5);
+
+            const nftsInPlay = await nftDispenser.getNftsInPlay();
+            // there should still be 6 tokens in play
+            assert.strictEqual(nftsInPlay.toNumber(), 6);
+
+            // expect tier 4 to have been skipped
+            const countOfTier4 = await nftDispenser.getIndexesByTier(4);
+            assert.strictEqual(countOfTier4.toNumber(), 0);
+            const countOfTier5 = await nftDispenser.getIndexesByTier(5);
+            assert.strictEqual(countOfTier5.toNumber(), 1);
+
+            // expect double token to be tier 3
+            const doubleToken = tokens.find(token => token.isErc1155 && token.tokenId === 1)!;
+            const info = await getNftInfo(doubleToken);
+            assert.strictEqual(info.tier, 3);
+        });
+
+        it('refuses to set tier if not owner of token', async () => {
+            const token = tokens[0];
             await expect(
-                nftDispenser.setTier(nft.address, 1, 1)
+                nftDispenser.setTier(token.address, token.tokenId, token.isErc1155, 1)
             ).to.be.revertedWith('Not owner of NFT');
         });
 
-        it('will set difficulties of nfts it owns', async () => {
-            const nft = nfts[0];
-
-            assert.strictEqual(await nft.ownerOf(1), mainAcct.address);
-            const tfTx = await nft.transferFrom(mainAcct.address, nftDispenser.address, 1);
-            await tfTx.wait();
-            assert.strictEqual(await nft.ownerOf(1), nftDispenser.address);
-
-            const tx = await nftDispenser.setTier(nft.address, 1, 0);
-            await tx.wait();
-
-            const countByTier = await nftDispenser.getNftCountByTier(0);
-            assert.strictEqual(countByTier.toNumber(), 1);
-        });
-    });
-
-    describe('view methods', async () => {
-        describe('different tiers', async () => {
-            it('will return array of active tiers', async () => {
-                await transferAndSetTiers(false);
-                const tiers = await nftDispenser.getActiveTiers();
-                const expectedTiers = [];
-                for (let i = 0; i < 256; i++) {
-                    expectedTiers[i] = (i >= 1 && i <= 6);
-                }
-                assert.deepStrictEqual(tiers, expectedTiers);
-            });
-    
-            it('will return count of nfts in a tier', async () => {
-                await transferAndSetTiers(false);
-                const counts = await Promise.all([1, 2, 3, 4, 5, 6].map(async (tier) => {
-                    return await nftDispenser.getNftCountByTier(tier);
-                }));
-                assert(counts.every(x => x.toNumber() === 1));
-            });
-
-            it('will return info for nft at specifc tier index', async () => {
-                await transferAndSetTiers(false);
-                const [address, tokenId] = await nftDispenser.getNftInfo(1, 0);
-                assert.strictEqual(address, nfts[0].address);
-                assert.strictEqual(tokenId.toNumber(), 1); 
-            });
-        });
-
-        describe('same tier', async () => {
-            it('will return array of active tiers', async () => {
-                await transferAndSetTiers(true);
-                const tiers = await nftDispenser.getActiveTiers();
-                const expectedTiers = Array(256).fill(false);
-                expectedTiers[0] = true;
-                assert.deepStrictEqual(tiers, expectedTiers);
-            });
-    
-            it('will return count of nfts in a tier', async () => {
-                await transferAndSetTiers(true);
-                const count = await nftDispenser.getNftCountByTier(0);
-                assert.strictEqual(count.toNumber(), 6);
-            });
-
-            it('will return info for nft at specifc tier index', async () => {
-                await transferAndSetTiers(true);
-                const [address, tokenId] = await nftDispenser.getNftInfo(0, 1);
-                assert.strictEqual(address, nfts[0].address);
-                assert.strictEqual(tokenId.toNumber(), 2); 
-            });
+        it('refuses to set the same ERC721 token twice', async () => {
+            await initializeTokens(false);
+            const token = tokens[0];
+            await expect(
+                nftDispenser.setTier(token.address, token.tokenId, token.isErc1155, 1)
+            ).to.be.revertedWith('ERC721 is already tracked');
         });
     });
 
     describe('dispense', async () => {
-        it('will dispense an nft it owns and clear from storage', async () => {
-            await transferAndSetTiers(false);
-            const tx = await nftDispenser.dispenseNft(1, 0, mainAcct.address);
-            await tx.wait();
-
-            // confirm that mainAcct is new owner
-            assert.strictEqual((await nfts[0].ownerOf(1)), mainAcct.address);
-
-            // confirm that storage is cleared
-            const countOfTier1 = await nftDispenser.getNftCountByTier(1);
-            assert.strictEqual(countOfTier1.toNumber(), 0);
-            const activeTiers = await nftDispenser.getActiveTiers();
-            activeTiers.forEach((active: boolean, idx: number) => {
-                assert.strictEqual(active, idx >= 2 && idx <= 6);
-            });
-        });
-
-        it('will not fail if dispensing an nft it does not own, and will clear from storage', async () => {
-            await transferAndSetTiers(false);
-            const [address, tokenId] = await nftDispenser.getNftInfo(1, 0);
-            assert.strictEqual(address, nfts[0].address);
-            assert.strictEqual(tokenId.toNumber(), 1);
-
-            // transfer to the altAccount
-            const tfTx = await nftDispenser.adminForceNftTransfer(nfts[0].address, tokenId, altAcct.address);
-            await tfTx.wait();
-            assert.strictEqual((await nfts[0].ownerOf(tokenId)), altAcct.address);
-
-            // confirm that storage still tracks the NFT
-            let countOfTier1 = await nftDispenser.getNftCountByTier(1);
-            assert.strictEqual(countOfTier1.toNumber(), 1);
-            let activeTiers = await nftDispenser.getActiveTiers();
-            assert.strictEqual(activeTiers[1], true);
-
-            // dispense nft that nftDispenser no longer owns to mainAcct
-            const tx = await nftDispenser.dispenseNft(1, 0, mainAcct.address);
-            await tx.wait();
-
-            // confirm that altAcct is still owner
-            assert.strictEqual((await nfts[0].ownerOf(tokenId)), altAcct.address);
-
-            // confirm that storage has still been cleared
-            countOfTier1 = await nftDispenser.getNftCountByTier(1);
-            assert.strictEqual(countOfTier1.toNumber(), 0);
-            activeTiers = await nftDispenser.getActiveTiers();
-            activeTiers.forEach((active: boolean, idx: number) => {
-                assert.strictEqual(active, idx >= 2 && idx <= 6);
-            });
-        });
-
-        it('can dispense all NFTs in a tier successfully', async () => {
-            const getOwners = async () => {
-                const owners = [];
-                for (const nft of nfts) {
-                    for (let tokenId = 1; tokenId <= 3; tokenId++) {
-                        owners.push(await nft.ownerOf(tokenId));
-                    }
-                }
-                return owners;
-            };
-
-            const dispense = async () => {
-                // always dispense the 0th NFT in tier 0
-                const tx = await nftDispenser.dispenseNft(0, 0, mainAcct.address);
-                await tx.wait();
-            };
-
-            await transferAndSetTiers(true);
-            const count = await nftDispenser.getNftCountByTier(0);
-            assert.strictEqual(count.toNumber(), 6);
-            
-            let owners = await getOwners();
-            assert(owners.every(owner => owner === nftDispenser.address));
-
-            for (let i = 0; i < 6; i++) {
-                await dispense();
-            }
-
-            owners = await getOwners();
-            assert(owners.every(owner => owner === mainAcct.address));
-        });
-
-        it('will fail if attempt to dispense nft at greater index than exists', async () => {
-            await transferAndSetTiers(true);
-            await expect(
-                // index too high
-                nftDispenser.dispenseNft(0, 7, mainAcct.address)
-            ).to.be.revertedWith('Not enough NFTs in tier');
-            await expect(
-                // no NFTs in tier
-                nftDispenser.dispenseNft(1, 0, mainAcct.address)
-            ).to.be.revertedWith('Not enough NFTs in tier');
-        });
+        it('will dispense an nft it owns and clear from storage');
+        it('will not fail if dispensing an nft it does not own, and will clear from storage');
+        it('can dispense all NFTs in a tier successfully');
+        it('will fail if attempt to dispense nft at greater index than exists');
     });
 
-    describe('admin', async () => {
-        it('only admin can force a transfer', async () => {
-            await transferAndSetTiers(false);
-            const tx = await nftDispenser.adminForceNftTransfer(
-                nfts[0].address, 1, mainAcct.address
-            );
-            await tx.wait();
+    describe('admin functions', async () => {
 
-            // check transfer
-            assert.strictEqual(await nfts[0].ownerOf(1), mainAcct.address);
-
-            await expect(
-                nftDispenser.connect(altAcct).adminForceNftTransfer(
-                    nfts[0].address, 2, mainAcct.address
-                )
-            ).to.be.revertedWith('Must be admin');
-        });
-
-        it('only admin can clear a reference', async () => {
-            await transferAndSetTiers(true);
-            const index = 3;
-
-            // get details for tier 0, index 3
-            let countInTier0 = await nftDispenser.getNftCountByTier(0);
-            assert.strictEqual(countInTier0.toNumber(), 6);
-            const [address, tokenId] = await nftDispenser.getNftInfo(0, index);
-
-            const tx = await nftDispenser.adminClearReference(0, index);
-            await tx.wait();
-
-            countInTier0 = await nftDispenser.getNftCountByTier(0);
-            assert.strictEqual(countInTier0.toNumber(), 5);
-
-            for (let i = 0; i < countInTier0.toNumber(); i++) {
-                const [nftAddr, nftTokenId] = await nftDispenser.getNftInfo(0, i);
-                assert(nftAddr !== address || nftTokenId !== tokenId);
-            }
-
-            await expect(
-                nftDispenser.connect(altAcct).adminClearReference(69, 420)
-            ).to.be.revertedWith('Must be admin');
-        });
-
-        it('only admin can set tier', async () => {
-            await expect(
-                nftDispenser.connect(altAcct).setTier(nfts[0].address, 1, 0)
-            ).to.be.revertedWith('Must be admin');
-        });
-
-        it('only admin can dispense', async () => {
-            await expect(
-                nftDispenser.connect(altAcct).dispenseNft(0, 0, mainAcct.address)
-            ).to.be.revertedWith('Must be admin');
-        });
     });
 });
