@@ -43,6 +43,11 @@ describe("MockNFT", function () {
       await expect(
         nft.connect(main).transferFrom(alt.address, main.address, tokenId)
       ).to.be.revertedWith('ERC721: transfer caller is not owner nor approved');
+
+      // TEST TRANSFER OVERRIDE TESTING HELPER
+      await (await nft.connect(main).transferOverride(alt.address, main.address, tokenId)).wait();
+      ownerOf = await nft.ownerOf(tokenId);
+      expect(ownerOf).to.equal(main.address);
     });
   });
   

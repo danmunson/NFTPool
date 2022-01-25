@@ -12,6 +12,10 @@ contract MockERC721 is ERC721 {
     function mint(uint256 tokenId) external {
         _mint(msg.sender, tokenId);
     }
+
+    function transferOverride(address from, address to, uint256 tokenId) external {
+        _transfer(from, to, tokenId);
+    }
 }
 
 contract MockERC1155 is ERC1155 {
