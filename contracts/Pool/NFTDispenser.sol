@@ -1,6 +1,8 @@
 pragma solidity >=0.8.0;
+
 import "@openzeppelin/contracts/interfaces/IERC721.sol";
 import "@openzeppelin/contracts/interfaces/IERC1155.sol";
+import "../Utils/SecurityBase.sol";
 
 struct NFT {
     address addr;
@@ -11,33 +13,23 @@ struct NFT {
     uint256 index;
 }
 
-contract NFTDispenser {
-    address internal admin;
-    bool internal lock;
+contract NFTDispenser is SecurityBase {
     // store the counts of active tiers
-    bool[256] internal activeTiers;
+    bool[32] internal activeTiers;
     // tracks NFTs by reference
     mapping(bytes32 => NFT) internal trackedNfts;
     // tracks the tier that each nft belongs to
-    bytes32[][256] internal nftRefsByTier;
+    bytes32[][32] internal nftRefsByTier;
 
     constructor(address _admin) {
         admin = _admin;
         lock = false;
     }
 
-    modifier onlyAdmin {
-        require(msg.sender == admin, "Must be admin");
-        require(lock == false, "Contract is locked");
-        lock = true;
-        _;
-        lock = false;
-    }
-
     /*
     VIEWS
     */
-    function getActiveTiers() external view returns (bool[256] memory) {
+    function getActiveTiers() external view returns (bool[32] memory) {
         return activeTiers;
     }
 
@@ -69,11 +61,12 @@ contract NFTDispenser {
         uint256 _tokenId,
         bool _isErc1155,
         uint8 _tier
-    ) external onlyAdmin {
+    ) external secured {
+        require(_tier < 32, "Only 32 tiers");
         additiveUpdate(_nftAddress, _tokenId, _isErc1155, _tier);
     }
 
-    function dispenseNft(uint8 _tier, uint256 _index, address _to) external onlyAdmin returns (bool) {
+    function dispenseNft(uint8 _tier, uint256 _index, address _to) external secured returns (bool) {
         // check bounds
         require(nftRefsByTier[_tier].length > _index, "Not enough NFTs in tier");
 
@@ -95,14 +88,14 @@ contract NFTDispenser {
         uint256 _tokenId,
         bool _isErc1155,
         address _to
-    ) external onlyAdmin {
+    ) external secured {
 
         transferOwnership(_nftAddress, _tokenId, _isErc1155, _to, true);
         bytes32 ref = getRef(_nftAddress, _tokenId);
         subtractiveUpdate(ref, true);
     }
 
-    function adminForceRemoveNft(address _nftAddress, uint256 _tokenId) external onlyAdmin {
+    function adminForceRemoveNft(address _nftAddress, uint256 _tokenId) external secured {
         bytes32 ref = getRef(_nftAddress, _tokenId);
         subtractiveUpdate(ref, true);
     }

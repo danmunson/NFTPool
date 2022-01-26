@@ -21,7 +21,7 @@ contract WETHManager {
         admin = _admin;
     }
 
-    modifier onlyAdmin {
+    modifier secured {
         require(msg.sender == admin, "Must be admin");
         _;
     }
@@ -50,13 +50,13 @@ contract WETHManager {
         bytes32 _mtx_sigR,
         bytes32 _mtx_sigS,
         uint8 _mtx_sigV
-    ) external onlyAdmin {
+    ) external secured {
         validateFunctionCall(_expectedAmount, _mtx_functionSignature);
         // WETH will revert on any issues
         weth.executeMetaTransaction(_mtx_userAddress, _mtx_functionSignature, _mtx_sigR, _mtx_sigS, _mtx_sigV);
     }
 
-    function transfer(address _to, uint256 _amount) external onlyAdmin {
+    function transfer(address _to, uint256 _amount) external secured {
         // WETH will revert on any issues
         weth.transfer(_to, _amount);
     }

@@ -1,7 +1,7 @@
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 import { expect, assert } from "chai";
 import { ethers } from "hardhat";
-import { NFTDispenser, MockERC1155, MockERC721, ERC721 } from "../../../typechain";
+import { NFTDispenser, MockERC1155, MockERC721 } from "../../../typechain";
 
 type Token = {
     address: string,
@@ -200,6 +200,13 @@ describe('NFTDispenser', async () => {
                 nftDispenser.setTier(token.address, token.tokenId, token.isErc1155, 1)
             ).to.be.revertedWith('Not owner of NFT');
         });
+
+        it('rejects if tier >= 32', async () => {
+            const token = tokens[0];
+            await expect(
+                nftDispenser.setTier(token.address, token.tokenId, token.isErc1155, 32)
+            ).to.be.revertedWith('Only 32 tiers');
+        });
     });
 
     describe('dispense', async () => {
@@ -211,7 +218,7 @@ describe('NFTDispenser', async () => {
             }
             
             const activeTiers = await nftDispenser.getActiveTiers();
-            assert.deepStrictEqual(activeTiers, Array(256).fill(false));
+            assert.deepStrictEqual(activeTiers, Array(32).fill(false));
 
             const indexes = await Promise.all([0,1,2,3,4].map(async (i) => {
                 return (await nftDispenser.getIndexesByTier(i)).toNumber();
