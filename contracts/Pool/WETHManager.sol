@@ -1,5 +1,7 @@
 pragma solidity >=0.8.0;
 
+import "../Utils/SecurityBase.sol";
+
 abstract contract WETHMinimal {
     function executeMetaTransaction(
         address userAddress,
@@ -12,18 +14,12 @@ abstract contract WETHMinimal {
     function transfer(address recipient, uint256 amount) public returns (bool) {}
 }
 
-contract WETHManager {
+contract WETHManager is SecurityBase {
     WETHMinimal weth;
-    address admin;
 
     constructor(address _wethAddress, address _admin) {
         weth = WETHMinimal(_wethAddress);
         admin = _admin;
-    }
-
-    modifier secured {
-        require(msg.sender == admin, "Must be admin");
-        _;
     }
 
     function validateFunctionCall(
