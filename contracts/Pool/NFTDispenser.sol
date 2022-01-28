@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: UNLICENSED
 pragma solidity >=0.8.0;
 
 import "@openzeppelin/contracts/interfaces/IERC721.sol";
@@ -15,11 +16,12 @@ struct NFT {
 
 contract NFTDispenser is SecurityBase {
     // store the counts of active tiers
-    bool[32] internal activeTiers;
+    // there are 33 tiers, 32 difficult and 1 default
+    bool[33] internal activeTiers;
     // tracks NFTs by reference
     mapping(bytes32 => NFT) internal trackedNfts;
     // tracks the tier that each nft belongs to
-    bytes32[][32] internal nftRefsByTier;
+    bytes32[][33] internal nftRefsByTier;
 
     constructor(address _admin) {
         admin = _admin;
@@ -29,7 +31,7 @@ contract NFTDispenser is SecurityBase {
     /*
     VIEWS
     */
-    function getActiveTiers() external view returns (bool[32] memory) {
+    function getActiveTiers() external view returns (bool[33] memory) {
         return activeTiers;
     }
 
@@ -62,7 +64,7 @@ contract NFTDispenser is SecurityBase {
         bool _isErc1155,
         uint8 _tier
     ) external secured {
-        require(_tier < 32, "Only 32 tiers");
+        require(_tier <= 32, "Largest tier is 32");
         additiveUpdate(_nftAddress, _tokenId, _isErc1155, _tier);
     }
 

@@ -201,11 +201,11 @@ describe('NFTDispenser', async () => {
             ).to.be.revertedWith('Not owner of NFT');
         });
 
-        it('rejects if tier >= 32', async () => {
+        it('rejects if tier > 32', async () => {
             const token = tokens[0];
             await expect(
-                nftDispenser.setTier(token.address, token.tokenId, token.isErc1155, 32)
-            ).to.be.revertedWith('Only 32 tiers');
+                nftDispenser.setTier(token.address, token.tokenId, token.isErc1155, 33)
+            ).to.be.revertedWith('Largest tier is 32');
         });
     });
 
@@ -218,7 +218,7 @@ describe('NFTDispenser', async () => {
             }
             
             const activeTiers = await nftDispenser.getActiveTiers();
-            assert.deepStrictEqual(activeTiers, Array(32).fill(false));
+            assert.deepStrictEqual(activeTiers, Array(33).fill(false));
 
             const indexes = await Promise.all([0,1,2,3,4].map(async (i) => {
                 return (await nftDispenser.getIndexesByTier(i)).toNumber();
@@ -438,7 +438,7 @@ describe('NFTDispenser', async () => {
                 let activeTiers = await nftDispenser.getActiveTiers();
                 assert.deepStrictEqual(
                     activeTiers,
-                    [true, true, true, true, true].concat(Array(32 - 5).fill(false))
+                    [true, true, true, true, true].concat(Array(33 - 5).fill(false))
                 );
 
                 const token = tokens[0];
@@ -459,7 +459,7 @@ describe('NFTDispenser', async () => {
                 activeTiers = await nftDispenser.getActiveTiers();
                 assert.deepStrictEqual(
                     activeTiers,
-                    [false, true, true, true, true, true].concat(Array(32 - 6).fill(false))
+                    [false, true, true, true, true, true].concat(Array(33 - 6).fill(false))
                 );
                 info = await getNftInfo(token);
                 assert.strictEqual(info.tier, 5);
