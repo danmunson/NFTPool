@@ -13,19 +13,28 @@ Goals:
 */
 
 contract Credits is SecurityBase, ERC1155 {
-    string public uri;
+    string internal contractUri;
     uint8 public threshold = 12;
 
-    constructor(address _admin, string memory _uri) ERC1155(_uri) {
+    constructor(address _admin, string memory _uri, string memory _contractUri) ERC1155(_uri) {
         admin = _admin;
-        uri = _uri;
+        contractUri = _contractUri;
+    }
+
+    function contractURI() external view returns (string memory) {
+        return contractUri;
+    }
+
+    function tokenIsValid(uint256 _tokenId) internal view returns (bool) {
+        return (
+            _tokenId != 0 &&
+            _tokenId <= threshold &&
+            threshold % _tokenId == 0
+        );
     }
 
     function mintCredits(address _user, uint256 _tokenId, uint256 _amount) external secured {
-        require(
-            _tokenId <= threshold && _tokenId % threshold == 0,
-            "Token ID not allowed"
-        );
+        require(tokenIsValid(_tokenId), "Token ID not allowed");
         _mint(_user, _tokenId, _amount, "");
     }
 
@@ -36,7 +45,7 @@ contract Credits is SecurityBase, ERC1155 {
         uint256[] memory _amounts
     ) external secured {
 
-        require(_ids.length == _amounts.length, "IDs and amounts must be even");
+        require(_ids.length == _amounts.length, "Tokens and amounts uneven");
         
         uint256 sum = 0;
         bool hasEnough = false;

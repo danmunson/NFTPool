@@ -432,6 +432,38 @@ describe('NFTDispenser', async () => {
                     token.address, token.tokenId
                 )).wait();
             });
+
+            it('can unset and reset tier', async () => {
+                await initializeTokens(false);
+                let activeTiers = await nftDispenser.getActiveTiers();
+                assert.deepStrictEqual(
+                    activeTiers,
+                    [true, true, true, true, true].concat(Array(32 - 5).fill(false))
+                );
+
+                const token = tokens[0];
+                let info = await getNftInfo(token);
+                assert.strictEqual(info.tier, 0);
+
+                // remove token
+                await (await nftDispenser.adminForceRemoveNft(
+                    token.address, token.tokenId
+                )).wait();
+
+                // setToken to 6th tier
+                await (await nftDispenser.setTier(
+                    token.address, token.tokenId, token.isErc1155, 5
+                )).wait();
+
+                // confirm that token has moved tiers
+                activeTiers = await nftDispenser.getActiveTiers();
+                assert.deepStrictEqual(
+                    activeTiers,
+                    [false, true, true, true, true, true].concat(Array(32 - 6).fill(false))
+                );
+                info = await getNftInfo(token);
+                assert.strictEqual(info.tier, 5);
+            });
         })
     });
 
@@ -444,7 +476,6 @@ describe('NFTDispenser', async () => {
         });
 
         it('dispenseNft', async () => {
-            const token = tokens[0];
             await expect(
                 nftDispenser.connect(altAcct).dispenseNft(0, 0, mainAcct.address)
             ).to.be.revertedWith('Must be admin');
