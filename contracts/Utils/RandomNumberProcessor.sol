@@ -5,6 +5,9 @@ library RandomNumberProcessor {
     uint public constant BITMASK_LENGTH = 32;
     uint public constant MAX_SLICES = 8; // = 256/32
 
+    /*
+    Given a random uint256, slice it up into 32-bit numbers and return respective rarities
+    */
     function getRarityLevels(
         uint random,
         uint numRequested
@@ -21,10 +24,6 @@ library RandomNumberProcessor {
 
         return rarityLevels;
     }
-
-    /*
-    
-    */
 
     /* UTILS */
 
@@ -91,21 +90,28 @@ library RandomNumberProcessor {
     ) public pure returns (uint) {
         
         uint exclusiveEnd = inclusiveStart + numBits;
-        assert(inclusiveStart >= 0 && exclusiveEnd <= 256);
-
         // create the mask for the specified positions
-        uint mask = (2 ** exclusiveEnd) - 1;
-        mask -= (2 ** inclusiveStart) - 1;
-
+        uint mask = _getMask(inclusiveStart, exclusiveEnd);
         // get slice with AND
         uint slice = number & mask;
-
         // shift left by inclusiveStart bits and return
         return slice >> inclusiveStart;
     }
 
-    /*
-    Calculate the tier for an element given the array of active tiers
-    */
+    function _getMask(
+        uint inclusiveStart,
+        uint exclusiveEnd
+    ) public pure returns (uint) {
+        require(exclusiveEnd <= 256, "exclusiveEnd > 256");
+        uint mask;
+        if (exclusiveEnd == 256) {
+            // avoid an overflow (with hardhat testing environment)
+            mask = ((2 ** (exclusiveEnd - 1)) - 1) + (2 ** (exclusiveEnd - 1));
+        } else {
+            mask = (2 ** exclusiveEnd) - 1;
+        }
+        mask -= (2 ** inclusiveStart) - 1;
+        return mask;
+    }
 
 }
