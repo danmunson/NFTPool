@@ -10,7 +10,7 @@ struct NFT {
     uint256 tokenId;
     bool isErc1155;
     uint256 quantity;
-    uint8 tier;
+    uint256 tier;
     uint256 index;
 }
 
@@ -35,13 +35,13 @@ contract NFTDispenser is SecurityBase {
         return activeTiers;
     }
 
-    function getIndexesByTier(uint8 _tier) external view returns (uint256) {
+    function getIndexesByTier(uint256 _tier) external view returns (uint256) {
         bytes32[] storage refArray = nftRefsByTier[_tier];
         return refArray.length;
     }
 
     function getNftInfo(address _nftAddress, uint256 _tokenId ) external view returns (
-        address, uint256, bool, uint256, uint8, uint256
+        address, uint256, bool, uint256, uint256, uint256
     ) {
         bytes32 ref = getRef(_nftAddress, _tokenId);
         NFT storage nft = trackedNfts[ref];
@@ -62,13 +62,17 @@ contract NFTDispenser is SecurityBase {
         address _nftAddress,
         uint256 _tokenId,
         bool _isErc1155,
-        uint8 _tier
+        uint256 _tier
     ) external secured {
         require(_tier <= 32, "Largest tier is 32");
         additiveUpdate(_nftAddress, _tokenId, _isErc1155, _tier);
     }
 
-    function dispenseNft(uint8 _tier, uint256 _index, address _to) external secured returns (bool) {
+    function dispenseNft(
+        uint256 _tier,
+        uint256 _index,
+        address _to
+    ) external secured returns (bool) {
         // check bounds
         require(nftRefsByTier[_tier].length > _index, "Not enough NFTs in tier");
 
@@ -127,7 +131,7 @@ contract NFTDispenser is SecurityBase {
         return 0;
     }
 
-    function additiveUpdate(address _nftAddress, uint256 _tokenId, bool _isErc1155, uint8 _tier) internal {
+    function additiveUpdate(address _nftAddress, uint256 _tokenId, bool _isErc1155, uint256 _tier) internal {
         uint256 balance = balanceOfThis(_nftAddress, _tokenId, _isErc1155);
         require(balance > 0, "Not owner of NFT");
 
@@ -158,7 +162,7 @@ contract NFTDispenser is SecurityBase {
 
     function subtractiveUpdate(bytes32 _ref, bool _fullRemove) internal {
         NFT storage nft = trackedNfts[_ref];
-        uint8 tier = nft.tier;
+        uint256 tier = nft.tier;
 
         // ensure NFT exists, otherwise don't bother
         if (nft.quantity > 0) {

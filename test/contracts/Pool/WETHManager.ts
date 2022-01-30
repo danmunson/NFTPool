@@ -40,7 +40,7 @@ describe('WETHManager', async () => {
         await mockWeth.deployed();
 
         const WETHManager = await ethers.getContractFactory("WETHManager");
-        wethManager = await WETHManager.deploy(mockWeth.address, mainAcct.address);
+        wethManager = await WETHManager.deploy(mainAcct.address, mockWeth.address);
         await wethManager.deployed();
 
         // set domain constants
@@ -54,48 +54,34 @@ describe('WETHManager', async () => {
 
     it('Can forward meta-transactions to the WETH contract and then transfer balances', async () => {
         // SEND META TRANSACTION
-        const wethManagerStartingBalance = await mockWeth.balanceOf(wethManager.address);
-        const message = await getMessage(testSender.address, wethManager.address);
+        const altStartingBalance = await mockWeth.balanceOf(altAcct.address);
+        const message = await getMessage(testSender.address, altAcct.address);
         const typedData = getTypedData({...message, ...domainConstants});
         const signature = signMetaTxTypedData(typedData, testSender.privateKey);
         const {r, s, v} = getSignatureParameters(signature);
         const forwardTx = await wethManager.forwardMetaTransaction(
             TRANSFER_AMOUNT, // expected amount
+            altAcct.address, // expected recipient
             testSender.address, typedData.message.functionSignature, r, s, v,
         );
         await forwardTx.wait();
 
-        const wethManagerEndingBalance = await mockWeth.balanceOf(wethManager.address);
-        const wethManagerBalanceDiff = wethManagerEndingBalance.sub(wethManagerStartingBalance);
+        const altEndingBalance = await mockWeth.balanceOf(altAcct.address);
+        const altBalanceDiff = altEndingBalance.sub(altStartingBalance);
         // confirm balance transfer
-        assert.equal(wethManagerBalanceDiff.toString(), TRANSFER_AMOUNT.toString());
-
-        // TRANSFER TO MAIN
-        const mainStartingBalance = await mockWeth.balanceOf(mainAcct.address);
-        const transferTx = await wethManager.transfer(mainAcct.address, TRANSFER_AMOUNT);
-        await transferTx.wait();
-
-        const mainEndingBalance = await mockWeth.balanceOf(mainAcct.address);
-        const mainBalanceDiff = mainEndingBalance.sub(mainStartingBalance);
-        // confirm balance transfer
-        assert.equal(mainBalanceDiff.toString(), TRANSFER_AMOUNT.toString());
+        assert.equal(altBalanceDiff.toString(), TRANSFER_AMOUNT.toString());
     });
 
     describe('admin', async () => {
-        it('only admin can transfer', async () => {
-            await expect(
-                wethManager.connect(altAcct).transfer(mainAcct.address, TRANSFER_AMOUNT)
-            ).to.be.revertedWith('Must be admin');
-        });
-
         it('only admin can forwardMetaTx', async () => {
-            const message = await getMessage(testSender.address, wethManager.address);
+            const message = await getMessage(testSender.address, altAcct.address);
             const typedData = getTypedData({...message, ...domainConstants});
             const signature = signMetaTxTypedData(typedData, testSender.privateKey);
             const {r, s, v} = getSignatureParameters(signature);
             await expect(
                 wethManager.connect(altAcct).forwardMetaTransaction(
                     TRANSFER_AMOUNT, // expected amount
+                    altAcct.address, // expected recipient
                     testSender.address,
                     typedData.message.functionSignature,
                     r, s, v,
@@ -105,38 +91,41 @@ describe('WETHManager', async () => {
 
     describe('validates function call', async () => {
         it('checks the function signature', async () => {
-            const message = await getMessage(testSender.address, wethManager.address);
+            const message = await getMessage(testSender.address, altAcct.address);
             const typedData = getTypedData({...message, ...domainConstants});
             // replace function signature with call to approve
             typedData.message.functionSignature = mockWeth.interface.encodeFunctionData(
-                'approve', [wethManager.address, TRANSFER_AMOUNT]
+                'approve', [altAcct.address, TRANSFER_AMOUNT]
             );
             const signature = signMetaTxTypedData(typedData, testSender.privateKey);
             const {r, s, v} = getSignatureParameters(signature);
             await expect(wethManager.forwardMetaTransaction(
                 TRANSFER_AMOUNT, // expected amount
+                altAcct.address, // expected recipient
                 testSender.address, typedData.message.functionSignature, r, s, v,
             )).to.be.revertedWith('Transfer not target function');
         });
 
         it('checks the recipient', async () => {
-            const message = await getMessage(testSender.address, mainAcct.address);
+            const message = await getMessage(testSender.address, mainAcct.address); // different recipient
             const typedData = getTypedData({...message, ...domainConstants});
             const signature = signMetaTxTypedData(typedData, testSender.privateKey);
             const {r, s, v} = getSignatureParameters(signature);
             await expect(wethManager.forwardMetaTransaction(
                 TRANSFER_AMOUNT, // different expected amount
+                altAcct.address, // expected recipient
                 testSender.address, typedData.message.functionSignature, r, s, v,
             )).to.be.revertedWith('Transfer to wrong recipient');
         });
 
         it('checks the amount', async () => {
-            const message = await getMessage(testSender.address, wethManager.address);
+            const message = await getMessage(testSender.address, altAcct.address);
             const typedData = getTypedData({...message, ...domainConstants});
             const signature = signMetaTxTypedData(typedData, testSender.privateKey);
             const {r, s, v} = getSignatureParameters(signature);
             await expect(wethManager.forwardMetaTransaction(
                 TRANSFER_AMOUNT.div(2), // different expected amount
+                altAcct.address, //
                 testSender.address, typedData.message.functionSignature, r, s, v,
             )).to.be.revertedWith('Transfer is for wrong amount');
         });

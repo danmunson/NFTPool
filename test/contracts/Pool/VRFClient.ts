@@ -1,4 +1,3 @@
-import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 import { expect, assert } from "chai";
 import { ethers } from "hardhat";
 import { 
@@ -11,7 +10,6 @@ import {
 // import { VRFClient } from "../../../typechain/VRFClient";
 
 describe('VRFClient', async () => {
-    let altAcct: SignerWithAddress;
     let link: MockLINK;
     let oracle: MockVRFOracle;
     let host: TestVRFClientHost;
@@ -22,9 +20,6 @@ describe('VRFClient', async () => {
     const keyhash = '0xdeadbeef12345678deadbeef12345678deadbeef12345678deadbeef12345678'; // bytes32
 
     beforeEach(async () => {
-        const signers = await ethers.getSigners();
-        altAcct = signers[1];
-
         // deploy test/mock contracts
         const MockLINK = await ethers.getContractFactory('MockLINK');
         link = await MockLINK.deploy();
@@ -90,6 +85,8 @@ describe('VRFClient', async () => {
         assert.strictEqual(linkBalance, startingBalance - (completedIterations * fee));
     });
 
+    it.skip('can delete a reference');
+
     it('can update the fee, and rejects if balance too low', async () => {
         const updateTx = await host.setFee(1000);
         await updateTx.wait();
@@ -127,6 +124,12 @@ describe('VRFClient', async () => {
         it('requestRandomNumber', async () => {
             await expect(
                 vrfClient.requestRandomNumber()
+            ).to.be.revertedWith('Must be admin');
+        });
+
+        it('deleteReference', async () => {
+            await expect(
+                vrfClient.deleteReference(keyhash)
             ).to.be.revertedWith('Must be admin');
         });
     });

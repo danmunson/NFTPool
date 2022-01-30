@@ -75,7 +75,7 @@ describe('NFTDispenser', async () => {
             tokenId: info[1].toNumber(),
             isErc1155: info[2],
             quantity: info[3].toNumber(),
-            tier: info[4],
+            tier: info[4].toNumber(),
             index: info[5].toNumber(),
         }
     }

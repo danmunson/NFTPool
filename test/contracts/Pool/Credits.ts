@@ -23,8 +23,8 @@ describe('Credits NFT', async () => {
         }
     }
 
-    async function spendCredits(user: string, tokens: number[], amounts: number[]) {
-        await (await credits.spendCredits(user, tokens, amounts)).wait();
+    async function spendCredits(user: string, qty: number, tokens: number[], amounts: number[]) {
+        await (await credits.spendCredits(user, qty, tokens, amounts)).wait();
     }
 
     async function tokenBalances(user: string): Promise<Map<number, number>> {
@@ -109,8 +109,8 @@ describe('Credits NFT', async () => {
 
                 for (const [n1, n2] of tokensAndAmounts) {
                     // do it both ways
-                    await spendCredits(alt.address, [n1], [n2]);
-                    await spendCredits(alt.address, [n2], [n1]);
+                    await spendCredits(alt.address, 1, [n1], [n2]);
+                    await spendCredits(alt.address, 1, [n2], [n1]);
                 }
 
                 const balances = await tokenBalances(alt.address);
@@ -125,7 +125,7 @@ describe('Credits NFT', async () => {
             it('1+2+3+6', async () => {
                 const tokens = [1, 2, 3, 6];
                 const amounts = tokens.map(_ => 1);
-                await spendCredits(alt.address, tokens, amounts);
+                await spendCredits(alt.address, 1, tokens, amounts);
                 const balances = await tokenBalances(alt.address);
                 assert.strictEqual(balances.get(6), 100 - 1);
                 assert.strictEqual(balances.get(3), 100 - 1);
@@ -133,10 +133,10 @@ describe('Credits NFT', async () => {
                 assert.strictEqual(balances.get(1), 100 - 1);
             });
 
-            it('excessive', async () => {
+            it('purchase quantity greater than 1', async () => {
                 const tokens = [1, 2, 3, 4, 6, 12];
                 const amounts = tokens.map(_ => 100);
-                await spendCredits(alt.address, tokens, amounts);
+                await spendCredits(alt.address, 10, tokens, amounts);
                 const balances = await tokenBalances(alt.address);
                 for (const balance of balances.values()) {
                     assert.strictEqual(balance, 0);
@@ -146,7 +146,7 @@ describe('Credits NFT', async () => {
 
         it('fails if tokenIds and amounts are not even', async () => {
             await expect(
-                credits.spendCredits(alt.address, [1], [2, 3])
+                credits.spendCredits(alt.address, 1, [1], [2, 3])
             ).to.be.revertedWith('Tokens and amounts uneven');
         });
 
@@ -156,7 +156,17 @@ describe('Credits NFT', async () => {
             const amounts = [2, 2];
 
             await expect(
-                credits.spendCredits(alt.address, tokens, amounts)
+                credits.spendCredits(alt.address, 1, tokens, amounts)
+            ).to.be.revertedWith('Credits are insufficient');
+        });
+
+        it('fails if credits do not amount to multiplied threshold', async () => {
+            await mintAllTokensForUser(alt.address, 10);
+            const tokens = [12, 4, 3];
+            const amounts = [9, 1, 1];
+
+            await expect(
+                credits.spendCredits(alt.address, 10, tokens, amounts)
             ).to.be.revertedWith('Credits are insufficient');
         });
 
@@ -166,7 +176,7 @@ describe('Credits NFT', async () => {
             const amounts = [3];
 
             await expect(
-                credits.spendCredits(alt.address, tokens, amounts)
+                credits.spendCredits(alt.address, 1, tokens, amounts)
             ).to.be.revertedWith('ERC1155: burn amount exceeds balance');
         });
 
@@ -178,7 +188,7 @@ describe('Credits NFT', async () => {
             const amounts = [5];
 
             await expect(
-                credits.spendCredits(alt.address, tokens, amounts)
+                credits.spendCredits(alt.address, 1, tokens, amounts)
             ).to.be.revertedWith('ERC1155: burn amount exceeds balance');
         });
     });
@@ -186,7 +196,7 @@ describe('Credits NFT', async () => {
     describe('views', async () => {
         it('threshold', async () => {
             const threshold = await credits.threshold();
-            assert.strictEqual(threshold, THRESHOLD);
+            assert.strictEqual(threshold.toNumber(), THRESHOLD);
         });
     });
 
@@ -286,7 +296,7 @@ describe('Credits NFT', async () => {
 
         it('spendCredits', async () => {
             await expect(
-                credits.connect(alt).spendCredits(alt.address, [12], [1])
+                credits.connect(alt).spendCredits(alt.address, 1, [12], [1])
             ).to.be.revertedWith('Must be admin');
         });
     });

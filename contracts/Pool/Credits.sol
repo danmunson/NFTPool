@@ -15,10 +15,11 @@ Goals:
 
 contract Credits is SecurityBase, ERC1155 {
     string internal contractUri;
-    uint8 public threshold = 12;
+    uint256 constant public threshold = 12;
 
     constructor(address _admin, string memory _uri, string memory _contractUri) ERC1155(_uri) {
         admin = _admin;
+        lock = false;
         contractUri = _contractUri;
     }
 
@@ -26,7 +27,7 @@ contract Credits is SecurityBase, ERC1155 {
         return contractUri;
     }
 
-    function tokenIsValid(uint256 _tokenId) internal view returns (bool) {
+    function tokenIsValid(uint256 _tokenId) internal pure returns (bool) {
         return (
             _tokenId != 0 &&
             _tokenId <= threshold &&
@@ -42,6 +43,7 @@ contract Credits is SecurityBase, ERC1155 {
     // It is up to the user to spend the right number of credits.
     function spendCredits(
         address _from,
+        uint256 _purchaseQuantity,
         uint256[] memory _ids,
         uint256[] memory _amounts
     ) external secured {
@@ -49,11 +51,12 @@ contract Credits is SecurityBase, ERC1155 {
         require(_ids.length == _amounts.length, "Tokens and amounts uneven");
         
         uint256 sum = 0;
+        uint256 thresholdAmount = threshold * _purchaseQuantity;
         bool hasEnough = false;
 
-        for (uint8 i = 0; i < _ids.length; i++) {
+        for (uint i = 0; i < _ids.length; i++) {
             sum += _ids[i] * _amounts[i];
-            if (sum >= threshold) {
+            if (sum >= thresholdAmount) {
                 hasEnough = true;
                 break;
             }

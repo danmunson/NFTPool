@@ -30,6 +30,10 @@ contract VRFClient is SecurityBase, VRFConsumerBase {
         keyHash = newKeyHash;
     }
 
+    function deleteReference(bytes32 _key) external secured {
+        delete randomMap[_key];
+    }
+
     function requestRandomNumber() external secured returns (bytes32) {
         require(LINK.balanceOf(address(this)) >= fee, "Not enough LINK");
         return requestRandomness(keyHash, fee);
