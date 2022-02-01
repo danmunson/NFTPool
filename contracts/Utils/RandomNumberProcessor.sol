@@ -2,8 +2,8 @@
 pragma solidity >=0.8.0;
 
 library RandomNumberProcessor {
-    uint public constant BITMASK_LENGTH = 32;
-    uint public constant MAX_SLICES = 8; // = 256/32
+    uint internal constant BITMASK_LENGTH = 32;
+    uint internal constant MAX_SLICES = 8; // = 256/32
 
     /*
     Given a random uint256, slice it up into 32-bit numbers and return respective rarities
@@ -11,7 +11,7 @@ library RandomNumberProcessor {
     function getRarityLevels(
         uint random,
         uint numRequested
-    ) external pure returns (uint[MAX_SLICES] memory) {
+    ) internal pure returns (uint[MAX_SLICES] memory) {
 
         require(numRequested <= MAX_SLICES, "Requested count too high");
 
@@ -40,7 +40,7 @@ library RandomNumberProcessor {
         (big endian binary) | 0000  ->  1000    ->   1100   ->   1110   ->  1111
         (decimal additions) | 0     +  2^(3-0)  +  2^(3-1)  +  2^(3-2)  +  2^(3-3)
     */
-    function _getRarity(uint number) public pure returns (uint) {
+    function _getRarity(uint number) internal pure returns (uint) {
         uint rarityLevel = 0;
         uint rarityMagnitude = 0;
         for (uint i = 1; i <= BITMASK_LENGTH; i++) {
@@ -62,7 +62,7 @@ library RandomNumberProcessor {
     function _getSlices(
         uint random,
         uint numOfSlices
-    ) public pure returns (uint[MAX_SLICES] memory) {
+    ) internal pure returns (uint[MAX_SLICES] memory) {
 
         uint[MAX_SLICES] memory slices;
 
@@ -87,7 +87,7 @@ library RandomNumberProcessor {
         uint number,
         uint inclusiveStart, // >= 0
         uint numBits // <= 256
-    ) public pure returns (uint) {
+    ) internal pure returns (uint) {
         
         uint exclusiveEnd = inclusiveStart + numBits;
         // create the mask for the specified positions
@@ -101,7 +101,7 @@ library RandomNumberProcessor {
     function _getMask(
         uint inclusiveStart,
         uint exclusiveEnd
-    ) public pure returns (uint) {
+    ) internal pure returns (uint) {
         require(exclusiveEnd <= 256, "exclusiveEnd > 256");
         uint mask;
         if (exclusiveEnd == 256) {

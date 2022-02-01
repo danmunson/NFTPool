@@ -1,6 +1,6 @@
 import { expect, assert } from "chai";
 import { ethers } from "hardhat";
-import { RandomNumberProcessor } from "../../../typechain";
+import { RNPTester } from "../../../typechain";
 
 const max32Bit = (2 ** 32) - 1;
 const eightNumbers = [0, 1, 2, 3, 4, 5, 6, 7].map(x => max32Bit - x);
@@ -15,11 +15,11 @@ function makeUint256(numbers: number[]) {
 }
 
 describe('RandomNumberProcessor', async () => {
-    let RNP: RandomNumberProcessor;
+    let RNP: RNPTester;
 
     before(async () => {
         // only need to deploy once, contract is stateless
-        const RandomNumberProcessor = await ethers.getContractFactory('RandomNumberProcessor');
+        const RandomNumberProcessor = await ethers.getContractFactory('RNPTester');
         RNP = await RandomNumberProcessor.deploy();
         await RNP.deployed();
     });
@@ -64,10 +64,7 @@ describe('RandomNumberProcessor', async () => {
             );
         });
 
-        // NOTE: Hardhat currently returns the wrong error message,
-        //      "Error: Transaction reverted: library was called directly"
-        // making it impossible to test this
-        it.skip('fails if exclusiveEnd > 256', async () => {
+        it('fails if exclusiveEnd > 256', async () => {
             await expect(
                 RNP._getMask(0, 257)
             ).to.be.revertedWith('exclusiveEnd > 256');
@@ -213,10 +210,10 @@ describe('RandomNumberProcessor', async () => {
 
         });
 
-        it.skip('Requested count too high', async () => {
+        it('Requested count too high', async () => {
             await expect(
                 RNP.getRarityLevels(12345, 10)
-            ).to.be.revertedWith('exclusiveEnd > 256');
+            ).to.be.revertedWith('Requested count too high');
         });
     });
 });
