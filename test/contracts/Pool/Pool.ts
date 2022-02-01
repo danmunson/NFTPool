@@ -1,8 +1,11 @@
 /**
  * CASES TO TEST
  * 
- *      ? what happens when there are no default tier NFTs
- *      ? 
+ *      * no default tiers results in skipping selection
+ *      * fulfillment can be spread across multiple transactions
+ *      * quantity purchased limit is respected
+ *      * reservations are made correctly
+ *       
  * 
  * PROCESSES
  *      * user refund

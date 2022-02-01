@@ -17,8 +17,15 @@ contract Credits is SecurityBase, ERC1155 {
     string internal contractUri;
     uint256 constant public threshold = 12;
 
-    constructor(address _admin, string memory _uri, string memory _contractUri) ERC1155(_uri) {
-        admin = _admin;
+    constructor(
+        address _eoaAdmin,
+        address _contractAdmin,
+        string memory _uri,
+        string memory _contractUri
+    ) ERC1155(_uri) {
+
+        eoaAdmin = _eoaAdmin;
+        contractAdmin = _contractAdmin;
         lock = false;
         contractUri = _contractUri;
     }
@@ -35,7 +42,7 @@ contract Credits is SecurityBase, ERC1155 {
         );
     }
 
-    function mintCredits(address _user, uint256 _tokenId, uint256 _amount) external secured {
+    function mintCredits(address _user, uint256 _tokenId, uint256 _amount) external anyAdmin {
         require(tokenIsValid(_tokenId), "Token ID not allowed");
         _mint(_user, _tokenId, _amount, "");
     }
@@ -46,7 +53,7 @@ contract Credits is SecurityBase, ERC1155 {
         uint256 _purchaseQuantity,
         uint256[] memory _ids,
         uint256[] memory _amounts
-    ) external secured {
+    ) external contractAdminOnly {
 
         require(_ids.length == _amounts.length, "Tokens and amounts uneven");
         

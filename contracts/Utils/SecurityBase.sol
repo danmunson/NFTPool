@@ -2,16 +2,9 @@
 pragma solidity >=0.8.0;
 
 abstract contract SecurityBase {
-    address internal admin;
+    address internal contractAdmin;
+    address internal eoaAdmin;
     bool internal lock;
-
-    modifier secured {
-        require(msg.sender == admin, "Must be admin");
-        require(lock == false, "Contract is locked");
-        lock = true;
-        _;
-        lock = false;
-    }
 
     modifier noReentry {
         require(lock == false, "Contract is locked");
@@ -20,8 +13,21 @@ abstract contract SecurityBase {
         lock = false;
     }
 
-    modifier adminOnly {
-        require(msg.sender == admin, "Must be admin");
+    modifier anyAdmin {
+        require(
+            msg.sender == contractAdmin || msg.sender == eoaAdmin, 
+            "Must be admin"
+        );
+        _;
+    }
+
+    modifier contractAdminOnly {
+        require(msg.sender == contractAdmin, "Must be admin");
+        _;
+    }
+
+    modifier eoaAdminOnly {
+        require(msg.sender == eoaAdmin, "Must be admin");
         _;
     }
 

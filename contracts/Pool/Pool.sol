@@ -32,7 +32,7 @@ contract Pool is SecurityBase {
 
     constructor(
         // Pool
-        address _primaryExternalAdmin,
+        address _eoaAdmin,
         address _feeRecipient,
         uint256 _drawFee,
         // Credits
@@ -53,7 +53,7 @@ contract Pool is SecurityBase {
         );
 
         // set admin
-        admin = _primaryExternalAdmin;
+        eoaAdmin = _eoaAdmin;
         lock = false;
 
         // set fee info
@@ -62,14 +62,17 @@ contract Pool is SecurityBase {
 
         // initialize contracts
         credits = new Credits(
-            address(this), // _admin
+            _eoaAdmin,
+            address(this), // _contractAadmin
             _tokenUri, // _uri
             _contractUri // _contractUri
         );
         nftDispenser = new NFTDispenser(
+            _eoaAdmin,
             address(this) // _admin
         );
         vrfClient = new VRFClient(
+            _eoaAdmin,
             address(this), // _admin
             _vrfOracleAddress, // _vrfAddress
             _linkTokenAddress, // _linkAddress
@@ -77,7 +80,6 @@ contract Pool is SecurityBase {
             _vrfKeyHash // _keyHash
         );
         wethManager = new WETHManager(
-            address(this), // _admin
             _wethAddress // _wethAddress
         );
     }
@@ -356,7 +358,7 @@ contract Pool is SecurityBase {
         );
     }
 
-    function getPrivateReservationDetails(address _user) external view adminOnly returns (
+    function getPrivateReservationDetails(address _user) external view eoaAdminOnly returns (
         bytes32, uint256, uint256[MAX_SLICES] memory
     ) {
         Reservation storage res = reservations[_user];
@@ -367,7 +369,7 @@ contract Pool is SecurityBase {
         );
     }
 
-    function getSideContractAddresses() external view adminOnly returns (
+    function getSideContractAddresses() external view eoaAdminOnly returns (
         address, address, address, address
     ) {
         return (
@@ -380,21 +382,19 @@ contract Pool is SecurityBase {
 
     /********* ADMIN *********/
 
-    // updateFeeRecipient
-    // updateDrawFee
-    // updateCreditFee
-    // refundUser
+    function updateFeeRecipient(address _feeRecipient) external eoaAdminOnly {
+        feeRecipient = _feeRecipient;
+    }
 
-    /********* ADMIN RELAY *********/
+    function updateDrawFee(uint256 _fee) external eoaAdminOnly {
+        drawFee = _fee;
+    }
 
-    // updateVrfFee
-    // updateVrfKeyhash
-
-    // mintCredits
-    // setCreditsUri
-    // setCreditsContractUri
-
-    // setNftTier
-    // forceTransferNft
-    // forceRemoveNft
+    function updateCreditFee(uint256 _quantity, uint256 _fee) external eoaAdminOnly {
+        creditFeeByQuantity[_quantity] = _fee;
+    }
+    
+    function refundUser(address _user) external eoaAdminOnly {
+        _refundUser(_user);
+    }
 }

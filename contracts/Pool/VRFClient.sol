@@ -10,31 +10,33 @@ contract VRFClient is SecurityBase, VRFConsumerBase {
     bytes32 public keyHash;
 
     constructor (
-        address _admin,
+        address _eoaAdmin,
+        address _contractAdmin,
         address _vrfAddress,
         address _linkAddress,
         uint256 _fee,
         bytes32 _keyHash
     ) VRFConsumerBase(_vrfAddress, _linkAddress) {
-        admin = _admin;
+        eoaAdmin = _eoaAdmin;
+        contractAdmin = _contractAdmin;
         lock = false;
         fee = _fee;
         keyHash = _keyHash;
     }
 
-    function updateFee(uint256 newFee) external secured {
+    function updateFee(uint256 newFee) external eoaAdminOnly {
         fee = newFee;
     }
 
-    function updateKeyhash(bytes32 newKeyHash) external secured {
+    function updateKeyhash(bytes32 newKeyHash) external eoaAdminOnly {
         keyHash = newKeyHash;
     }
 
-    function deleteReference(bytes32 _key) external secured {
+    function deleteReference(bytes32 _key) external contractAdminOnly {
         delete randomMap[_key];
     }
 
-    function requestRandomNumber() external secured returns (bytes32) {
+    function requestRandomNumber() external contractAdminOnly noReentry returns (bytes32) {
         require(LINK.balanceOf(address(this)) >= fee, "Not enough LINK");
         return requestRandomness(keyHash, fee);
     }

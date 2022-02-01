@@ -13,13 +13,11 @@ abstract contract WETHMinimal {
     ) public payable returns (bytes memory) {}
 }
 
-contract WETHManager is SecurityBase {
+contract WETHManager {
     WETHMinimal internal weth;
 
-    constructor(address _admin, address _wethAddress) {
+    constructor(address _wethAddress) {
         weth = WETHMinimal(_wethAddress);
-        admin = _admin;
-        lock = false;
     }
 
     function validateFunctionCall(
@@ -48,7 +46,7 @@ contract WETHManager is SecurityBase {
         bytes32 _mtxSigR,
         bytes32 _mtxSigS,
         uint8 _mtxSigV
-    ) external secured {
+    ) external {
         validateFunctionCall(_expectedAmount, _expectedRecipient, _mtxFunctionSignature);
         // WETH will revert on any issues
         weth.executeMetaTransaction(_mtxUserAddress, _mtxFunctionSignature, _mtxSigR, _mtxSigS, _mtxSigV);

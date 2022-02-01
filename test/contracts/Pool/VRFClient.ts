@@ -1,3 +1,4 @@
+import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 import { expect, assert } from "chai";
 import { ethers } from "hardhat";
 import { 
@@ -6,13 +7,13 @@ import {
     TestVRFClientHost,
     VRFClient
 } from "../../../typechain";
-// import { TestVRFClientHost } from "../../../typechain/TestVRFClientHost";
-// import { VRFClient } from "../../../typechain/VRFClient";
 
 describe('VRFClient', async () => {
     let link: MockLINK;
     let oracle: MockVRFOracle;
     let host: TestVRFClientHost;
+    let eoaAdmin: SignerWithAddress;
+    let alt: SignerWithAddress;
     let vrfClient: VRFClient;
 
     const startingBalance = 100;
@@ -20,6 +21,9 @@ describe('VRFClient', async () => {
     const keyhash = '0xdeadbeef12345678deadbeef12345678deadbeef12345678deadbeef12345678'; // bytes32
 
     beforeEach(async () => {
+        const signers = await ethers.getSigners();
+        eoaAdmin = signers[0];
+        alt = signers[1];
         // deploy test/mock contracts
         const MockLINK = await ethers.getContractFactory('MockLINK');
         link = await MockLINK.deploy();
@@ -36,6 +40,7 @@ describe('VRFClient', async () => {
         // deploy VRFClient
         const VRFClient = await ethers.getContractFactory('VRFClient');
         vrfClient = await VRFClient.deploy(
+            eoaAdmin.address,
             host.address,
             oracle.address,
             link.address,
@@ -85,10 +90,30 @@ describe('VRFClient', async () => {
         assert.strictEqual(linkBalance, startingBalance - (completedIterations * fee));
     });
 
-    it.skip('can delete a reference');
+    it('can delete a reference', async () => {
+        // request random number
+        const tx = await host.makeRequest(1);
+        await tx.wait();
+
+        // get the internal request id
+        const referenceId = await host.getRequestId(1);
+        const submitTx = await oracle.submitRandomness(vrfClient.address, referenceId, 1000);
+        await submitTx.wait();
+
+
+        let random = await vrfClient.getRandomNumber(referenceId);
+        assert(random.eq(1000));
+
+        await (
+            await host.deleteReference(referenceId)
+        ).wait();
+
+        random = await vrfClient.getRandomNumber(referenceId);
+        assert(random.eq(0));
+    });
 
     it('can update the fee, and rejects if balance too low', async () => {
-        const updateTx = await host.setFee(1000);
+        const updateTx = await vrfClient.updateFee(1000);
         await updateTx.wait();
 
         const newFee = await vrfClient.fee();
@@ -101,7 +126,7 @@ describe('VRFClient', async () => {
 
     it('can update the keyhash', async () => {
         const newKeyhash = '0x0000000012345678deadbeef12345678deadbeef12345678deadbeef12345678';
-        const updateTx = await host.setKeyhash(newKeyhash);
+        const updateTx = await vrfClient.updateKeyhash(newKeyhash);
         await updateTx.wait();
 
         const updatedKeyhash = await vrfClient.keyHash();
@@ -111,13 +136,13 @@ describe('VRFClient', async () => {
     describe('only admin', async () => {
         it('updateFee', async () => {
             await expect(
-                vrfClient.updateFee(fee)
+                vrfClient.connect(alt).updateFee(fee)
             ).to.be.revertedWith('Must be admin');
         });
 
         it('updateKeyhash', async () => {
             await expect(
-                vrfClient.updateKeyhash(keyhash)
+                vrfClient.connect(alt).updateKeyhash(keyhash)
             ).to.be.revertedWith('Must be admin');
         });
 

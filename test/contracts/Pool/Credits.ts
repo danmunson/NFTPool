@@ -10,6 +10,7 @@ const validTokens = [1, 2, 3, 4, 6, 12];
 
 describe('Credits NFT', async () => {
     let main: SignerWithAddress;
+    let contractAdmin: SignerWithAddress;
     let alt: SignerWithAddress;
     let credits: Credits;
 
@@ -24,7 +25,7 @@ describe('Credits NFT', async () => {
     }
 
     async function spendCredits(user: string, qty: number, tokens: number[], amounts: number[]) {
-        await (await credits.spendCredits(user, qty, tokens, amounts)).wait();
+        await (await credits.connect(contractAdmin).spendCredits(user, qty, tokens, amounts)).wait();
     }
 
     async function tokenBalances(user: string): Promise<Map<number, number>> {
@@ -48,10 +49,11 @@ describe('Credits NFT', async () => {
     beforeEach(async () => {
         const signers = await ethers.getSigners();
         main = signers[0];
-        alt = signers[1];
+        contractAdmin = signers[1];
+        alt = signers[2];
 
         const Credits = await ethers.getContractFactory('Credits');
-        credits = await Credits.deploy(main.address, TOKEN_URI, CONTRACT_URI);
+        credits = await Credits.deploy(main.address, contractAdmin.address, TOKEN_URI, CONTRACT_URI);
         await credits.deployed();
     });
 
@@ -63,6 +65,15 @@ describe('Credits NFT', async () => {
             for (const tokenId of validTokens) {
                 assert.strictEqual(balances.get(tokenId), 100);
             }
+        });
+
+        it('contractAdmin can mint credits', async () => {
+            await (
+                await credits.connect(contractAdmin).mintCredits(alt.address, 1, 100)
+            ).wait();
+
+            const balances = await tokenBalances(alt.address);
+            assert.strictEqual(balances.get(1), 100);
         });
 
         it('does not mint tokenId above threshold', async () => {
@@ -146,7 +157,7 @@ describe('Credits NFT', async () => {
 
         it('fails if tokenIds and amounts are not even', async () => {
             await expect(
-                credits.spendCredits(alt.address, 1, [1], [2, 3])
+                credits.connect(contractAdmin).spendCredits(alt.address, 1, [1], [2, 3])
             ).to.be.revertedWith('Tokens and amounts uneven');
         });
 
@@ -156,7 +167,7 @@ describe('Credits NFT', async () => {
             const amounts = [2, 2];
 
             await expect(
-                credits.spendCredits(alt.address, 1, tokens, amounts)
+                credits.connect(contractAdmin).spendCredits(alt.address, 1, tokens, amounts)
             ).to.be.revertedWith('Credits are insufficient');
         });
 
@@ -166,7 +177,7 @@ describe('Credits NFT', async () => {
             const amounts = [9, 1, 1];
 
             await expect(
-                credits.spendCredits(alt.address, 10, tokens, amounts)
+                credits.connect(contractAdmin).spendCredits(alt.address, 10, tokens, amounts)
             ).to.be.revertedWith('Credits are insufficient');
         });
 
@@ -176,7 +187,7 @@ describe('Credits NFT', async () => {
             const amounts = [3];
 
             await expect(
-                credits.spendCredits(alt.address, 1, tokens, amounts)
+                credits.connect(contractAdmin).spendCredits(alt.address, 1, tokens, amounts)
             ).to.be.revertedWith('ERC1155: burn amount exceeds balance');
         });
 
@@ -188,7 +199,7 @@ describe('Credits NFT', async () => {
             const amounts = [5];
 
             await expect(
-                credits.spendCredits(alt.address, 1, tokens, amounts)
+                credits.connect(contractAdmin).spendCredits(alt.address, 1, tokens, amounts)
             ).to.be.revertedWith('ERC1155: burn amount exceeds balance');
         });
     });
@@ -297,6 +308,11 @@ describe('Credits NFT', async () => {
         it('spendCredits', async () => {
             await expect(
                 credits.connect(alt).spendCredits(alt.address, 1, [12], [1])
+            ).to.be.revertedWith('Must be admin');
+
+            // only contractAdmin can mint
+            await expect(
+                credits.connect(main).spendCredits(alt.address, 1, [12], [1])
             ).to.be.revertedWith('Must be admin');
         });
     });

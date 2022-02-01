@@ -11,6 +11,7 @@ type Token = {
 
 describe('NFTDispenser', async () => {
     let mainAcct: SignerWithAddress;
+    let contractAdmin: SignerWithAddress;
     let altAcct: SignerWithAddress;
     let nftDispenser: NFTDispenser;
     let erc721: MockERC721;
@@ -90,12 +91,13 @@ describe('NFTDispenser', async () => {
     before(async () => {
         const signers = await ethers.getSigners();
         mainAcct = signers[0];
-        altAcct = signers[1];
+        contractAdmin = signers[1];
+        altAcct = signers[2];
     });
 
     beforeEach(async () => {
         const NFTDispenser = await ethers.getContractFactory("NFTDispenser");
-        nftDispenser = await NFTDispenser.deploy(mainAcct.address);
+        nftDispenser = await NFTDispenser.deploy(mainAcct.address, contractAdmin.address);
         await nftDispenser.deployed();
 
         const MockERC721 = await ethers.getContractFactory("MockERC721");
@@ -214,7 +216,7 @@ describe('NFTDispenser', async () => {
         it('can dispense all NFTs in a tier successfully', async () => {
             await initializeTokens(true);
             for (let i = 0; i < 6; i++) {
-                await nftDispenser.dispenseNft(0, 0, mainAcct.address);
+                await nftDispenser.connect(contractAdmin).dispenseNft(0, 0, mainAcct.address);
             }
             
             const activeTiers = await nftDispenser.getActiveTiers();
@@ -250,7 +252,7 @@ describe('NFTDispenser', async () => {
 
             // nft dispenser no longer controls token, but it is still registered
             assert.strictEqual((await nftDispenser.getIndexesByTier(0)).toNumber(), 1);
-            await (await nftDispenser.dispenseNft(0, 0, altAcct.address)).wait();
+            await (await nftDispenser.connect(contractAdmin).dispenseNft(0, 0, altAcct.address)).wait();
 
             // confirm main account is still owner, but registered nft is gone
             assert(await ownsToken(mainAcct.address, token));
@@ -259,7 +261,7 @@ describe('NFTDispenser', async () => {
         
         it('will fail if attempt to dispense nft at greater index than exists in a tier', async () => {
             await expect(
-                nftDispenser.dispenseNft(0, 0, mainAcct.address)
+                nftDispenser.connect(contractAdmin).dispenseNft(0, 0, mainAcct.address)
             ).to.be.revertedWith('Not enough NFTs in tier');
         });
 
@@ -271,7 +273,7 @@ describe('NFTDispenser', async () => {
             assert.strictEqual((await nftDispenser.getIndexesByTier(0)).toNumber(), 1);
 
             // dispense
-            await (await nftDispenser.dispenseNft(0, 0, mainAcct.address)).wait();
+            await (await nftDispenser.connect(contractAdmin).dispenseNft(0, 0, mainAcct.address)).wait();
 
             // confirm main account is still owner, but registered nft is gone
             assert.strictEqual(
@@ -473,11 +475,20 @@ describe('NFTDispenser', async () => {
             await expect(
                 nftDispenser.connect(altAcct).setTier(token.address, token.tokenId, token.isErc1155, 0)
             ).to.be.revertedWith('Must be admin');
+
+            await expect(
+                nftDispenser.connect(contractAdmin).setTier(token.address, token.tokenId, token.isErc1155, 0)
+            ).to.be.revertedWith('Must be admin');
         });
 
         it('dispenseNft', async () => {
             await expect(
                 nftDispenser.connect(altAcct).dispenseNft(0, 0, mainAcct.address)
+            ).to.be.revertedWith('Must be admin');
+
+            // does not work with eoaAdmin either
+            await expect(
+                nftDispenser.dispenseNft(0, 0, mainAcct.address)
             ).to.be.revertedWith('Must be admin');
         });
 
@@ -488,12 +499,24 @@ describe('NFTDispenser', async () => {
                     token.address, token.tokenId, token.isErc1155, mainAcct.address
                 )
             ).to.be.revertedWith('Must be admin');
+
+            await expect(
+                nftDispenser.connect(contractAdmin).adminForceTransferNft(
+                    token.address, token.tokenId, token.isErc1155, mainAcct.address
+                )
+            ).to.be.revertedWith('Must be admin');
         });
 
         it('adminForceRemoveNft', async () => {
             const token = tokens[0];
             await expect(
                 nftDispenser.connect(altAcct).adminForceRemoveNft(
+                    token.address, token.tokenId
+                )
+            ).to.be.revertedWith('Must be admin');
+
+            await expect(
+                nftDispenser.connect(contractAdmin).adminForceRemoveNft(
                     token.address, token.tokenId
                 )
             ).to.be.revertedWith('Must be admin');

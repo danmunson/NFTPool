@@ -23,8 +23,9 @@ contract NFTDispenser is SecurityBase {
     // tracks the tier that each nft belongs to
     bytes32[][33] internal nftRefsByTier;
 
-    constructor(address _admin) {
-        admin = _admin;
+    constructor(address _eoaAdmin, address _contractAdmin) {
+        eoaAdmin = _eoaAdmin;
+        contractAdmin = _contractAdmin;
         lock = false;
     }
 
@@ -63,7 +64,8 @@ contract NFTDispenser is SecurityBase {
         uint256 _tokenId,
         bool _isErc1155,
         uint256 _tier
-    ) external secured {
+    ) external eoaAdminOnly noReentry {
+
         require(_tier <= 32, "Largest tier is 32");
         additiveUpdate(_nftAddress, _tokenId, _isErc1155, _tier);
     }
@@ -72,7 +74,7 @@ contract NFTDispenser is SecurityBase {
         uint256 _tier,
         uint256 _index,
         address _to
-    ) external secured returns (bool) {
+    ) external contractAdminOnly noReentry returns (bool) {
         // check bounds
         require(nftRefsByTier[_tier].length > _index, "Not enough NFTs in tier");
 
@@ -94,14 +96,14 @@ contract NFTDispenser is SecurityBase {
         uint256 _tokenId,
         bool _isErc1155,
         address _to
-    ) external secured {
+    ) external eoaAdminOnly noReentry {
 
         transferOwnership(_nftAddress, _tokenId, _isErc1155, _to, true);
         bytes32 ref = getRef(_nftAddress, _tokenId);
         subtractiveUpdate(ref, true);
     }
 
-    function adminForceRemoveNft(address _nftAddress, uint256 _tokenId) external secured {
+    function adminForceRemoveNft(address _nftAddress, uint256 _tokenId) external eoaAdminOnly noReentry {
         bytes32 ref = getRef(_nftAddress, _tokenId);
         subtractiveUpdate(ref, true);
     }

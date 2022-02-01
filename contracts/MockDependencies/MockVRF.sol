@@ -41,8 +41,7 @@ contract TestVRFConsumer {
 interface IVRFClient {
     function requestRandomNumber() external returns (bytes32);
     function getRandomNumber(bytes32) external view returns (uint256);
-    function updateFee(uint256) external;
-    function updateKeyhash(bytes32) external;
+    function deleteReference(bytes32 _key) external;
 }
 
 // this contract is used to test the actual VRFClient
@@ -69,11 +68,7 @@ contract TestVRFClientHost {
         return IVRFClient(vrfClientAddress).getRandomNumber(requestId);
     }
 
-    function setFee(uint256 fee) external {
-        IVRFClient(vrfClientAddress).updateFee(fee);
-    }
-
-    function setKeyhash(bytes32 keyhash) external {
-        IVRFClient(vrfClientAddress).updateKeyhash(keyhash);
+    function deleteReference(bytes32 _referenceId) external {
+        IVRFClient(vrfClientAddress).deleteReference(_referenceId);
     }
 }

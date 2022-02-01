@@ -40,7 +40,7 @@ describe('WETHManager', async () => {
         await mockWeth.deployed();
 
         const WETHManager = await ethers.getContractFactory("WETHManager");
-        wethManager = await WETHManager.deploy(mainAcct.address, mockWeth.address);
+        wethManager = await WETHManager.deploy(mockWeth.address);
         await wethManager.deployed();
 
         // set domain constants
@@ -70,23 +70,6 @@ describe('WETHManager', async () => {
         const altBalanceDiff = altEndingBalance.sub(altStartingBalance);
         // confirm balance transfer
         assert.equal(altBalanceDiff.toString(), TRANSFER_AMOUNT.toString());
-    });
-
-    describe('admin', async () => {
-        it('only admin can forwardMetaTx', async () => {
-            const message = await getMessage(testSender.address, altAcct.address);
-            const typedData = getTypedData({...message, ...domainConstants});
-            const signature = signMetaTxTypedData(typedData, testSender.privateKey);
-            const {r, s, v} = getSignatureParameters(signature);
-            await expect(
-                wethManager.connect(altAcct).forwardMetaTransaction(
-                    TRANSFER_AMOUNT, // expected amount
-                    altAcct.address, // expected recipient
-                    testSender.address,
-                    typedData.message.functionSignature,
-                    r, s, v,
-            )).to.be.revertedWith('Must be admin');
-        });
     });
 
     describe('validates function call', async () => {
