@@ -14,7 +14,7 @@ contract Pool is SecurityBase {
     VRFClient internal vrfClient;
     WETHManager internal wethManager;
 
-    address internal feeRecipient;
+    address public feeRecipient;
     uint256 public drawFee;
     mapping(uint256 => uint256) public creditFeeByQuantity;
     mapping(address => Reservation) internal reservations;
@@ -153,6 +153,7 @@ contract Pool is SecurityBase {
         bytes32 _sigS,
         uint8 _sigV
     ) external noReentry {
+
         _validateUser(_user);
 
         uint256 fee = drawFee;
@@ -254,8 +255,9 @@ contract Pool is SecurityBase {
     */
     function _preprocessFulfillDraw(address _user) internal {
         Reservation storage res = reservations[_user];
-        require(res.quantity == 0, "Reservation does not exist");
+        require(res.quantity > 0, "Reservation does not exist");
 
+        // only compute if randomSeed hasn't been set yet
         if (res.randomSeed == 0) {
             uint256 randomSeed = _getRandomSeedForUser(_user);
             require(randomSeed != 0, "Random seed not ready");
@@ -278,8 +280,8 @@ contract Pool is SecurityBase {
     function _postprocessFulfillDraw(address _user) internal {
         Reservation storage res = reservations[_user];
 
-        // use GTE to be safe...
-        if (res.quantity >= res.drawsOccurred) {
+        // if user has drawn AS MUCH AS they are allowed...
+        if (res.drawsOccurred >= res.quantity) {
             delete reservations[_user];
         }
     }
@@ -289,6 +291,8 @@ contract Pool is SecurityBase {
     */
     function _refundUser(address _user) internal {
         Reservation storage res = reservations[_user];
+        // delete reference
+        vrfClient.deleteReference(res.requestId);
         // ensure that we are not going to mint for a contract
         // if someone used a contract, that's against ToS
         if (!_isContract(_user)) {
