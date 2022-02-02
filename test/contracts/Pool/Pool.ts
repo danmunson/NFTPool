@@ -59,7 +59,7 @@ const creditsTokenUri = 'https:url.com/token/{id}';
 const creditsContractUri = 'https:url.com/contract';
 const keyhash = '0x6e75b569a01ef56d18cab6a8e71e6600d6ce853834d4a5748b720d06f878b3a4';
 
-describe.only('NFTPool', async () => {
+describe('NFTPool', async () => {
     let buyer: Wallet;
     let main: SignerWithAddress;
     let feeRecipient: SignerWithAddress;
@@ -254,7 +254,7 @@ describe.only('NFTPool', async () => {
                 assert.strictEqual(drawsOccurred.toNumber(), 0);
 
                 const [requestId] = await pool.getPrivateReservationDetails(buyer.address);
-                await fulfillRandom(2 ** 32, requestId);
+                await fulfillRandom(2 ** 32 - 1, requestId);
 
                 const canFulfill = pool.canFulfillReservation(buyer.address);
                 assert(canFulfill);
@@ -264,10 +264,9 @@ describe.only('NFTPool', async () => {
                     await pool.fulfillDraw(buyer.address, 0)
                 ).wait();
 
-                // const [_, randomSeed, computedRarities] = await pool.getPrivateReservationDetails(buyer.address);
-                // console.log(randomSeed, computedRarities);
-                console.log(await pool.getReservationDetails(buyer.address));
-                console.log(await pool.getPrivateReservationDetails(buyer.address));
+                const [_, randomSeed, computedRarities] = await pool.getPrivateReservationDetails(buyer.address);
+                assert.strictEqual(randomSeed.toNumber(), 2 ** 32 - 1);
+                assert.deepStrictEqual(computedRarities.map(x => x.toNumber()), [32, 0, 0, 0, 0, 0, 0, 0]);
             });
         });
     });
