@@ -39,6 +39,8 @@ import {
     signMetaTxTypedData
 } from "../../../utils/metaTxHelpers";
 
+import { PoolInterfaceFactory, PoolAdmin } from '../../../utils/PoolManager';
+
 type Mocks = {
     weth: MockWETH,
     oracle: MockVRFOracle,
@@ -61,6 +63,7 @@ const keyhash = '0x6e75b569a01ef56d18cab6a8e71e6600d6ce853834d4a5748b720d06f878b
 
 describe('NFTPool', async () => {
     let buyer: Wallet;
+    let admin: Wallet;
     let main: SignerWithAddress;
     let feeRecipient: SignerWithAddress;
     let pool: Pool;
@@ -70,6 +73,8 @@ describe('NFTPool', async () => {
 
     async function setSigners() {
         buyer = ethers.Wallet.createRandom();
+        admin = ethers.Wallet.createRandom().connect(ethers.provider);
+
         const signers = await ethers.getSigners();
         main = signers[0];
         feeRecipient = signers[1];
@@ -106,10 +111,10 @@ describe('NFTPool', async () => {
         mocks = {weth, oracle, link, erc721, erc1155};
     }
 
-    async function deployPool() {
+    async function deployPool(adminWallet?: Wallet) {
         const Pool = await ethers.getContractFactory('Pool');
         pool = await Pool.deploy(
-            main.address, // _eoaAdmin
+            adminWallet ? adminWallet.address : main.address, // _eoaAdmin
             feeRecipient.address, // _feeRecipient
             drawFee, // _drawFee
             creditsTokenUri, // _tokenUri
@@ -122,7 +127,9 @@ describe('NFTPool', async () => {
         );
         await pool.deployed();
 
-        const [creditsAddress, nftdispenserAddress, vrfClientAddress] = await pool.getSideContractAddresses();
+        const [creditsAddress, nftdispenserAddress, vrfClientAddress] = await pool.connect(
+            adminWallet || main
+        ).getSideContractAddresses();
         const credits = await ethers.getContractAt('Credits', creditsAddress);
         const nftDispenser = await ethers.getContractAt('NFTDispenser', nftdispenserAddress);
         const vrfClient = await ethers.getContractAt('VRFClient', vrfClientAddress);
@@ -175,7 +182,7 @@ describe('NFTPool', async () => {
         await deployDependencies();
     });
 
-    describe('Contract', async () => {
+    describe('Contract Validation', async () => {
 
         describe('input validation', async () => {
             before(async () => {
@@ -228,7 +235,7 @@ describe('NFTPool', async () => {
             });
         });
 
-        describe('admin & views', async () => {
+        describe('views', async () => {
             before(async () => {
                 await deployPool();
             });
@@ -271,5 +278,55 @@ describe('NFTPool', async () => {
         });
     });
 
-    describe('Interface <-> Contract', async () => {});
+    describe('Interface <-> Contract', async () => {
+        let poolAdmin: PoolAdmin;
+
+        describe('admin', async () => {
+            before(async () => {
+                // have main send funds to admin
+                await main.sendTransaction({
+                    to: admin.address,
+                    value: utils.parseEther('10.0')
+                });
+
+                await deployPool(admin);
+                const [
+                    creditsAddress,
+                    nftDispenserAddress,
+                    vrfClientAddress
+                ] = await pool.connect(admin).getSideContractAddresses();
+
+                const PoolIxFactory = new PoolInterfaceFactory(
+                    admin, pool.address, creditsAddress, nftDispenserAddress, vrfClientAddress
+                );
+
+                poolAdmin = PoolIxFactory.makePoolAdmin();
+            });
+
+            it('updateFeeRecipient', async () => {
+                const currentRecipient = await pool.feeRecipient();
+                await poolAdmin.updateFeeRecipient(main.address);
+                const newFeeRecipient = await pool.feeRecipient();
+                assert.strictEqual(newFeeRecipient, main.address);
+                assert.notEqual(newFeeRecipient, currentRecipient);
+            });
+
+            it('updateDrawFee', async () => {
+                const currentFee = await pool.drawFee();
+                await poolAdmin.updateDrawFee("0.001");
+                const newFee = await pool.drawFee();
+                assert.strictEqual(newFee.toString(), utils.parseEther("0.001").toString());
+                assert.notEqual(newFee.toString(), currentFee.toString());
+            });
+
+            it('updateCreditFee', async () => {
+                const currentFee = await pool.creditFeeByQuantity(10);
+                assert.strictEqual(currentFee.toNumber(), 0);
+
+                await poolAdmin.updateCreditFee(10, "0.0009");
+                const newFee = await pool.creditFeeByQuantity(10);
+                assert.strictEqual(newFee.toString(), utils.parseEther("0.0009").toString());
+            });
+        });
+    });
 });
