@@ -39,7 +39,7 @@ import {
     signMetaTxTypedData
 } from "../../../utils/metaTxHelpers";
 
-import { PoolInterfaceFactory, PoolAdmin } from '../../../utils/PoolManager';
+import { PoolInterfaceFactory, PoolAdmin, PoolView } from '../../../utils/PoolManager';
 
 type Mocks = {
     weth: MockWETH,
@@ -78,6 +78,12 @@ describe('NFTPool', async () => {
         const signers = await ethers.getSigners();
         main = signers[0];
         feeRecipient = signers[1];
+
+        // have main send funds to admin
+        await main.sendTransaction({
+            to: admin.address,
+            value: utils.parseEther('10.0')
+        });
     }
 
     async function deployDependencies() {
@@ -160,8 +166,10 @@ describe('NFTPool', async () => {
         }
     }
 
-    async function getTransferParameters(amount: string) {
-        const message = await getMessage(buyer.address, feeRecipient.address, utils.parseEther(amount));
+    async function getTransferParameters(amount: string, quantity: number = 1) {
+        const message = await getMessage(
+            buyer.address, feeRecipient.address, utils.parseEther(amount).mul(quantity)
+        );
         const typedData = getTypedData({...message, ...domainConstants});
         const signature = signMetaTxTypedData(typedData, buyer.privateKey);
         const {r, s, v} = getSignatureParameters(signature);
@@ -280,15 +288,10 @@ describe('NFTPool', async () => {
 
     describe('Interface <-> Contract', async () => {
         let poolAdmin: PoolAdmin;
+        let poolView: PoolView;
 
-        describe('admin', async () => {
+        describe('admin & views', async () => {
             before(async () => {
-                // have main send funds to admin
-                await main.sendTransaction({
-                    to: admin.address,
-                    value: utils.parseEther('10.0')
-                });
-
                 await deployPool(admin);
                 const [
                     creditsAddress,
@@ -300,7 +303,8 @@ describe('NFTPool', async () => {
                     admin, pool.address, creditsAddress, nftDispenserAddress, vrfClientAddress
                 );
 
-                poolAdmin = PoolIxFactory.makePoolAdmin();
+                poolAdmin = await PoolIxFactory.makePoolAdmin();
+                poolView = await PoolIxFactory.makePoolView();
             });
 
             it('updateFeeRecipient', async () => {
@@ -309,23 +313,124 @@ describe('NFTPool', async () => {
                 const newFeeRecipient = await pool.feeRecipient();
                 assert.strictEqual(newFeeRecipient, main.address);
                 assert.notEqual(newFeeRecipient, currentRecipient);
+                // test pool view
+                const view = await poolView.getFeeRecipient();
+                assert.strictEqual(view, newFeeRecipient);
+                // reset
+                await poolAdmin.updateFeeRecipient(currentRecipient);
             });
 
             it('updateDrawFee', async () => {
                 const currentFee = await pool.drawFee();
-                await poolAdmin.updateDrawFee("0.001");
+                await poolAdmin.updateDrawFee('0.001');
                 const newFee = await pool.drawFee();
-                assert.strictEqual(newFee.toString(), utils.parseEther("0.001").toString());
+                assert.strictEqual(newFee.toString(), utils.parseEther('0.001').toString());
                 assert.notEqual(newFee.toString(), currentFee.toString());
+                // test pool view
+                const view = await poolView.getDrawFee();
+                assert.strictEqual(view, newFee);
             });
 
             it('updateCreditFee', async () => {
                 const currentFee = await pool.creditFeeByQuantity(10);
                 assert.strictEqual(currentFee.toNumber(), 0);
 
-                await poolAdmin.updateCreditFee(10, "0.0009");
+                await poolAdmin.updateCreditFee(10, '0.0009');
                 const newFee = await pool.creditFeeByQuantity(10);
-                assert.strictEqual(newFee.toString(), utils.parseEther("0.0009").toString());
+                assert.strictEqual(newFee.toString(), utils.parseEther('0.0009').toString());
+
+                // test pool view
+                const view = await poolView.getCreditFee(10);
+                assert.strictEqual(view, newFee);
+            });
+
+            it('refundUser', async () => {
+                const {fsig, r, s, v} = await getTransferParameters('0.001', 2);
+                await (
+                    await pool.initiateDrawWithWeth(buyer.address, 2, fsig, r, s, v)
+                ).wait();
+
+                const [_, quantity] = await pool.getReservationDetails(buyer.address);
+                assert.strictEqual(quantity.toNumber(), 2);
+
+                // test pool view
+                const view = await poolView.getReservation(buyer.address);
+                assert.strictEqual(view.quantity.toNumber(), quantity.toNumber());
+
+                let balance = await sides.credits.balanceOf(buyer.address, 12);
+                assert.strictEqual(balance.toNumber(), 0);
+
+                // REFUND
+                await poolAdmin.refundUser(buyer.address);
+
+                const [__, newQuantity] = await pool.getReservationDetails(buyer.address);
+                assert.strictEqual(newQuantity.toNumber(), 0);
+
+                balance = await sides.credits.balanceOf(buyer.address, 12);
+                assert.strictEqual(balance.toNumber(), 2);
+
+                // test pool view
+                const creditsView = await poolView.getCreditsBalance(buyer.address);
+                assert.strictEqual(creditsView[12], balance.toNumber());
+            });
+
+            it('setUris', async () => {
+                const currentUris = await poolView.getUris();
+                await poolAdmin.setUris('tokenUri.com', 'contractUri.com');
+                const newUris = await poolView.getUris();
+                assert.notEqual(currentUris.contractUri, newUris.contractUri);
+                assert.strictEqual(newUris.tokenUri, 'tokenUri.com');
+                assert.strictEqual(newUris.contractUri, 'contractUri.com');
+            });
+
+            it('mintCredits', async () => {
+                let currentBalances = await poolView.getCreditsBalance(sides.nftDispenser.address);
+                assert.strictEqual(currentBalances[1], 0);
+
+                await poolAdmin.mintCredits(sides.nftDispenser.address, 1, 100);
+
+                currentBalances = await poolView.getCreditsBalance(sides.nftDispenser.address);
+                assert.strictEqual(currentBalances[1], 100);
+            });
+
+            // this test is dependent on the state created by the preceding test
+            it('setTier', async () => {
+                let activeTiers = await poolView.getActiveTiers();
+                let indexesAt0 = await poolView.getIndexesByTier(0);
+                let info = await poolView.getNftInfo(sides.credits.address, 1);
+
+                assert.deepStrictEqual(activeTiers, Array(33).fill(false));
+                assert.strictEqual(indexesAt0.toNumber(), 0);
+                assert.strictEqual(info.quantity, 0);
+
+                // set tier
+                await poolAdmin.setTier(sides.credits.address, 1, true, 0);
+
+                // check again
+                activeTiers = await poolView.getActiveTiers();
+                indexesAt0 = await poolView.getIndexesByTier(0);
+                info = await poolView.getNftInfo(sides.credits.address, 1);
+
+                assert.deepStrictEqual(activeTiers, [true].concat(Array(32).fill(false)));
+                assert.strictEqual(indexesAt0.toNumber(), 1);
+                assert.strictEqual(info.quantity, 100);
+            });
+
+            it('update vrf', async () => {
+                const currentFee = await poolView.vrfFee();
+                const currentKeyhash = await poolView.vrfKeyhash();
+
+                await poolAdmin.updateVrfFee(utils.parseEther("100.0"));
+                await poolAdmin.updateKeyhash('0x' + Array(64).fill('f').join(''));
+
+                const newFee = await poolView.vrfFee();
+                const newKeyhash = await poolView.vrfKeyhash();
+
+                assert.notEqual(newKeyhash, currentKeyhash);
+                assert.notEqual(newFee.toString(), currentFee.toString());
+
+                assert.strictEqual(newFee.toString(), utils.parseEther("100.0").toString());
+                assert.strictEqual(newKeyhash, '0x' + Array(64).fill('f').join(''));
             });
         });
     });

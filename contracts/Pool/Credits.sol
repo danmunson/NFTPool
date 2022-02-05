@@ -14,24 +14,28 @@ Goals:
 */
 
 contract Credits is SecurityBase, ERC1155 {
-    string internal contractUri;
+    string public contractURI;
     uint256 constant public threshold = 12;
 
     constructor(
         address _eoaAdmin,
         address _contractAdmin,
         string memory _uri,
-        string memory _contractUri
+        string memory _contractURI
     ) ERC1155(_uri) {
 
         eoaAdmin = _eoaAdmin;
         contractAdmin = _contractAdmin;
         lock = false;
-        contractUri = _contractUri;
+        contractURI = _contractURI;
     }
 
-    function contractURI() external view returns (string memory) {
-        return contractUri;
+    function setUris(
+        string memory _uri,
+        string memory _contractURI
+    ) external eoaAdminOnly {
+        _setURI(_uri);
+        contractURI = _contractURI;
     }
 
     function tokenIsValid(uint256 _tokenId) internal pure returns (bool) {

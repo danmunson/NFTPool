@@ -222,6 +222,18 @@ describe('Credits NFT', async () => {
             assert.strictEqual(uri, CONTRACT_URI);
         });
 
+        it('setUris', async () => {
+            await (
+                await credits.setUris('https://123', 'https://456')
+            ).wait();
+
+            const uri = await credits.uri(2);
+            assert.strictEqual(uri, 'https://123');
+
+            const contractUri = await credits.contractURI();
+            assert.strictEqual(contractUri, 'https://456');
+        });
+
         it('balanceOf', async () => {
             await mintCredits(alt.address, 12, 5);
             const balance12 = await credits.balanceOf(alt.address, 12);
@@ -299,6 +311,12 @@ describe('Credits NFT', async () => {
     });
 
     describe('admin only', async () => {
+        it('setUris', async () => {
+            await expect(
+                credits.connect(alt).setUris('https://fake.com/0x{id}', 'https://fake.com/')
+            ).to.be.revertedWith('Must be admin');
+        });
+
         it('mintCredits', async () => {
             await expect(
                 credits.connect(alt).mintCredits(alt.address, 12, 1)
