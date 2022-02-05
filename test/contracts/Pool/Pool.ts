@@ -39,7 +39,7 @@ import {
     signMetaTxTypedData
 } from "../../../utils/metaTxHelpers";
 
-import { PoolInterfaceFactory, PoolAdmin, PoolView } from '../../../utils/PoolManager';
+import { PoolInterfaceFactory, PoolAdmin, PoolView, PoolRelay } from '../../../utils/PoolManager';
 
 type Mocks = {
     weth: MockWETH,
@@ -271,7 +271,7 @@ describe('NFTPool', async () => {
                 const [requestId] = await pool.getPrivateReservationDetails(buyer.address);
                 await fulfillRandom(2 ** 32 - 1, requestId);
 
-                const canFulfill = pool.canFulfillReservation(buyer.address);
+                let canFulfill = pool.canFulfillReservation(buyer.address);
                 assert(canFulfill);
 
                 // fulfill claim with _maxCount = 0 so as to not draw
@@ -282,6 +282,12 @@ describe('NFTPool', async () => {
                 const [_, randomSeed, computedRarities] = await pool.getPrivateReservationDetails(buyer.address);
                 assert.strictEqual(randomSeed.toNumber(), 2 ** 32 - 1);
                 assert.deepStrictEqual(computedRarities.map(x => x.toNumber()), [32, 0, 0, 0, 0, 0, 0, 0]);
+
+                // check that vrf reference was deleted but use canFulfillReservation is still true
+                const vrfRandom = await sides.vrfClient.getRandomNumber(requestId);
+                assert.strictEqual(vrfRandom.toNumber(), 0);
+                canFulfill = pool.canFulfillReservation(buyer.address);
+                assert(canFulfill);
             });
         });
     });
@@ -289,6 +295,7 @@ describe('NFTPool', async () => {
     describe('Interface <-> Contract', async () => {
         let poolAdmin: PoolAdmin;
         let poolView: PoolView;
+        let poolRelay: PoolRelay;
 
         describe('admin & views', async () => {
             before(async () => {
@@ -431,6 +438,43 @@ describe('NFTPool', async () => {
 
                 assert.strictEqual(newFee.toString(), utils.parseEther("100.0").toString());
                 assert.strictEqual(newKeyhash, '0x' + Array(64).fill('f').join(''));
+            });
+        });
+
+        describe('user experience', async () => {
+            // get a fresh rest on every test
+            beforeEach(async () => {
+                await deployPool(admin);
+                const [
+                    creditsAddress,
+                    nftDispenserAddress,
+                    vrfClientAddress
+                ] = await pool.connect(admin).getSideContractAddresses();
+
+                const PoolIxFactory = new PoolInterfaceFactory(
+                    admin, pool.address, creditsAddress, nftDispenserAddress, vrfClientAddress
+                );
+
+                poolAdmin = await PoolIxFactory.makePoolAdmin();
+                poolView = await PoolIxFactory.makePoolView();
+                poolRelay = await PoolIxFactory.makePoolRelay();
+            });
+
+            it('initiateDrawWithWeth');
+            it('initiateDrawWithCredits');
+            it('buyCredits');
+
+            describe('fulfillDraw', async () => {
+
+                it('user can receive credits as defaults');
+
+                // test both "maxToDraw" limit and "drawsOccurred" limit
+                it('a draw can be fulfilled over multiple rounds');
+
+                it('user can receive erc721s and erc1155s');
+
+                // test that drawing can resume once deck is reloaded
+                it('will not draw if tier 0 is empty')
             });
         });
     });

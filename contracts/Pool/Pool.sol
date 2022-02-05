@@ -342,6 +342,9 @@ contract Pool is SecurityBase {
 
     function _getRandomSeedForUser(address _user) internal view returns (uint256) {
         Reservation storage res = reservations[_user];
+        if (res.randomSeed > 0) {
+            return res.randomSeed;
+        }
         return vrfClient.getRandomNumber(res.requestId);
     }
 
