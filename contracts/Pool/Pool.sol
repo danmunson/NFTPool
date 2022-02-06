@@ -332,9 +332,10 @@ contract Pool is SecurityBase {
 
         bool[33] memory activeTiers = nftDispenser.getActiveTiers();
         uint256 selectedTier = 0;
-        for (uint i = 0; i < rarity; i++) {
+        for (uint i = 0; i <= rarity; i++) {
             // find the first, highest active tier
-            if (activeTiers[rarity - i]) break;
+            selectedTier = rarity - i;
+            if (activeTiers[selectedTier]) break;
         }
 
         uint256 indexesInTier = nftDispenser.getIndexesByTier(selectedTier);

@@ -86,6 +86,18 @@ describe('NFTPool', async () => {
         });
     }
 
+    async function deployNftMocks() {
+        const MockERC721 = await ethers.getContractFactory("MockERC721");
+        const erc721 = await MockERC721.deploy();
+        await erc721.deployed();
+
+        const MockERC1155 = await ethers.getContractFactory("MockERC1155");
+        const erc1155 = await MockERC1155.deploy();
+        await erc1155.deployed();
+
+        return {erc721, erc1155};
+    }
+
     async function deployDependencies() {
         const MockWETH = await ethers.getContractFactory('MockWETH');
         const weth = await MockWETH.deploy();
@@ -99,13 +111,7 @@ describe('NFTPool', async () => {
         const oracle = await MockVRFOracle.deploy();
         await oracle.deployed();
 
-        const MockERC721 = await ethers.getContractFactory("MockERC721");
-        const erc721 = await MockERC721.deploy();
-        await erc721.deployed();
-
-        const MockERC1155 = await ethers.getContractFactory("MockERC1155");
-        const erc1155 = await MockERC1155.deploy();
-        await erc1155.deployed();
+        const {erc721, erc1155} = await deployNftMocks();
 
         domainConstants = {
             name: 'Wrapped Ether',
@@ -185,12 +191,37 @@ describe('NFTPool', async () => {
         ).wait();
     }
 
+    function getRandomFromTiers(...tiers: number[]) {
+        const hexStrings = tiers.map(tier => {
+            // create length 32 strings that will yield the correct tiers
+            const binaryString = Array(tier).fill('1').join('') + Array(32 - tier).fill('0').join('');
+            return parseInt(binaryString, 2).toString(16);
+        });
+        // reverse hex string to ensure that the first tier is also the first slice
+        hexStrings.reverse();
+        return '0x' + hexStrings.join('').padStart(64, '0');
+    }
+
     before(async () => {
         await setSigners();
         await deployDependencies();
     });
 
     describe('Contract Validation', async () => {
+
+        it('randomFromTiers', () => {
+            const nums = [32, 25, 16, 2, 1];
+            const hexString = getRandomFromTiers(...nums).slice(2);
+            const extractedNums = [];
+            for (let i = 0; i < nums.length; i++) {
+                const slice = hexString.slice(64 - (8 * (i + 1)), 64 - (8 * i));
+                const binaryString = parseInt(slice, 16).toString(2);
+                let countOf1s = 0;
+                for (const char of binaryString) if (char === '1') countOf1s++;
+                extractedNums.push(countOf1s);
+            }
+            assert.deepStrictEqual(nums, extractedNums);
+        });
 
         describe('input validation', async () => {
             before(async () => {
@@ -572,6 +603,10 @@ describe('NFTPool', async () => {
                 }
 
                 async function setupNfts(settings: NFTSetting[]) {
+                    const {erc721, erc1155} = await deployNftMocks();
+                    mocks.erc721 = erc721;
+                    mocks.erc1155 = erc1155;
+                    
                     for (const {ix, tokenId, qty, tier} of settings) {
                         switch (ix) {
                             case 'erc721':
@@ -626,18 +661,149 @@ describe('NFTPool', async () => {
                     );
                 });
 
+                // test ordering is exactly as expected
                 // test both "maxToDraw" limit and "drawsOccurred" limit
                 // test that drawing not possible if default tier is empty
                 //      - drawing can resume once deck is reloaded
-                it('multi-round fulfillment; default tier guaranteed');
+                // test with erc721s, erc1155s, and credits
+                it('multi-round fulfillment; default tier guaranteed', async () => {
+                    const tiers = [10, 5, 20, 3, 3];
+                    const randomHexStr = getRandomFromTiers(...tiers);
 
-                // confirm that the ordering is exactly as expected
-                it('user can receive erc721s, erc1155s, and credits');
+                    // helper fn
+                    async function relevantBalances() {
+                        const b721 = (await mocks.erc721.ownerOf(1)) === buyer.address ? 1 : 0;
+                        const b1155 = (await mocks.erc1155.balanceOf(buyer.address, 1)).toNumber();
+                        const bcreds = (await sides.credits.balanceOf(buyer.address, 1)).toNumber();
+                        return {erc721: b721, erc1155: b1155, credits: bcreds};
+                    }
 
-                // check gas used!
-                // tx.wait().getTransactionReceipt().gasUsed;
-                //
-                // also, use nfts that do events
+                    /**
+                     * Rounds:
+                     *  (1) 
+                     */
+                    await setupNfts([
+                        {ix: 'credits', tokenId: 1, qty: 1, tier: 0}, // set at tier 0
+                        {ix: 'erc1155', tokenId: 1, qty: 1, tier: 8}, // set at tier 8
+                        {ix: 'erc721', tokenId: 1, qty: 1, tier: 20} // set at tier 20
+                    ]);
+
+                    await drawAndSetRandom(5, randomHexStr);
+
+                    assert.strictEqual(
+                        (await poolView.getReservation(buyer.address)).quantity.toNumber(), 5
+                    );
+
+                    assert.deepStrictEqual(await relevantBalances(), {
+                        erc721: 0, erc1155: 0, credits: 0
+                    });
+
+                    // step (1) - expect erc1155
+                    await poolRelay.fulfill(buyer.address, 1);
+                    assert.deepStrictEqual(await relevantBalances(), {
+                        erc721: 0, erc1155: 1, credits: 0
+                    });
+
+                    // step (2) - expect credits
+                    await poolRelay.fulfill(buyer.address, 1);
+                    assert.deepStrictEqual(await relevantBalances(), {
+                        erc721: 0, erc1155: 1, credits: 1
+                    });
+
+                    // check in
+                    let dispenseLogs = await poolView.getDispensedEvents();
+                    let res = await poolView.getReservation(buyer.address);
+                    assert.strictEqual(dispenseLogs.length, 2);
+                    assert.strictEqual(res.drawsOccurred.toNumber(), 2);
+
+                    // step (3) draw again, but with no tier 0s -- expect to skip
+                    await poolRelay.fulfill(buyer.address, 2);
+                    assert.deepStrictEqual(await relevantBalances(), {
+                        erc721: 0, erc1155: 1, credits: 1
+                    });
+
+                    // expect the dispensedEvents count and the drawsOccurred count to not change
+                    dispenseLogs = await poolView.getDispensedEvents();
+                    res = await poolView.getReservation(buyer.address);
+                    assert.strictEqual(dispenseLogs.length, 2);
+                    assert.strictEqual(res.drawsOccurred.toNumber(), 2);
+
+                    // step (4) - add more credits to default tier
+                    await poolAdmin.mintCredits(sides.nftDispenser.address, 1, 100);
+                    await poolAdmin.setTier(sides.credits.address, 1, true, 0);
+
+                    // step (5) - expect erc721 + 2 more credits
+                    //          * as a catch, ask to draw 8
+                    await poolRelay.fulfill(buyer.address, 8);
+                    assert.deepStrictEqual(await relevantBalances(), {
+                        erc721: 1, erc1155: 1, credits: 3
+                    });
+
+                    dispenseLogs = await poolView.getDispensedEvents();
+                    res = await poolView.getReservation(buyer.address);
+                    assert.strictEqual(dispenseLogs.length, 5); // all 5 drawn
+                    assert.strictEqual(res.drawsOccurred.toNumber(), 0); // bc the res is gone
+
+                    const info = await poolView.getNftInfo(sides.credits.address, 1);
+                    assert.strictEqual(info.quantity, 98);
+                });
+
+                it('selects nfts in the right order', async () => {
+                    const tiers = [10, 10, 11];
+                    const randomHexStr = getRandomFromTiers(...tiers);
+
+                    // helper fn
+                    async function relevantBalances() {
+                        const t0 = (await mocks.erc721.ownerOf(0)) === buyer.address ? 1 : 0;
+                        const t8 = (await mocks.erc721.ownerOf(8)) === buyer.address ? 1 : 0;
+                        const t9 = (await mocks.erc721.ownerOf(9)) === buyer.address ? 1 : 0;
+                        const t11 = (await mocks.erc721.ownerOf(11)) === buyer.address ? 1 : 0;
+                        return {t0, t8, t9, t11};
+                    }
+
+                    await setupNfts([
+                        {ix: 'erc721', tokenId: 9, qty: 1, tier: 9},
+                        {ix: 'erc721', tokenId: 8, qty: 1, tier: 8},
+                        {ix: 'erc721', tokenId: 11, qty: 1, tier: 11},
+                        {ix: 'erc721', tokenId: 0, qty: 1, tier: 0}
+                    ]);
+
+                    await drawAndSetRandom(3, randomHexStr);
+
+                    await poolRelay.fulfill(buyer.address, 1);
+                    assert.deepStrictEqual(await relevantBalances(), {t0: 0, t8: 0, t9: 1, t11: 0});
+
+                    await poolRelay.fulfill(buyer.address, 1);
+                    assert.deepStrictEqual(await relevantBalances(), {t0: 0, t8: 1, t9: 1, t11: 0});
+
+                    await poolRelay.fulfill(buyer.address, 1);
+                    assert.deepStrictEqual(await relevantBalances(), {t0: 0, t8: 1, t9: 1, t11: 1});
+                });
+
+                it('cycles through nfts in the same tier', async () => {
+                    async function relevantBalances() {
+                        return await Promise.all([1, 2, 3].map(async (tokenId) => {
+                            return (
+                                await mocks.erc1155.balanceOf(buyer.address, tokenId)
+                            ).toNumber();
+                        }));
+                    }
+
+                    await setupNfts([
+                        {ix: 'erc1155', tokenId: 1, qty: 10, tier: 0},
+                        {ix: 'erc1155', tokenId: 2, qty: 10, tier: 0},
+                        {ix: 'erc1155', tokenId: 3, qty: 10, tier: 0},
+                    ]);
+
+                    await drawAndSetRandom(6, 1); // since the random is just 1, then all tiers will be 0
+
+                    await poolRelay.fulfill(buyer.address, 3);
+                    assert.deepStrictEqual(await relevantBalances(), [1, 1, 1]);
+
+                    await poolRelay.fulfill(buyer.address, 3);
+                    assert.deepStrictEqual(await relevantBalances(), [2, 2, 2]);
+                });
+
                 it('stress test - draw 8x, all 32 tier', async () => {
                     // set default tier to have 1000 credits
                     await poolAdmin.mintCredits(sides.nftDispenser.address, 1, 1000);
@@ -652,7 +818,7 @@ describe('NFTPool', async () => {
 
                     const balance = await poolView.getCreditsBalance(buyer.address);
                     assert.strictEqual(balance[1], 8);
-                    // gas usage is expected to be 944078
+                    // gas usage is expected to be 946785
                     assert.isBelow(res.gasUsed.toNumber(), 10 ** 6);
 
                     const {user, quantity} = await poolView.getReservation(buyer.address);
