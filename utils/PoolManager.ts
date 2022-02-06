@@ -10,6 +10,7 @@ import {
     Pool,
     VRFClient
 } from '../typechain';
+import { TypedEventFilter } from '../typechain/common';
 
 type PoolContracts = {
     pool: Pool;
@@ -101,7 +102,7 @@ export class PoolRelay implements IPool {
         const tx = await this.contracts.pool.initiateDrawWithWeth(
             user, quantity, functionSignature, sigR, sigS, sigV
         );
-        await tx.wait();
+        return await tx.wait();
     }
 
     async drawWithCredits(
@@ -113,7 +114,7 @@ export class PoolRelay implements IPool {
         const tx = await this.contracts.pool.initiateDrawWithCredits(
             user, quantity, tokenIds, amounts
         );
-        await tx.wait();
+        return await tx.wait();
     }
 
     async buyCredits(
@@ -127,14 +128,14 @@ export class PoolRelay implements IPool {
         const tx = await this.contracts.pool.buyCredits(
             user, quantity, functionSignature, sigR, sigS, sigV
         );
-        await tx.wait();
+        return await tx.wait();
     }
 
     /** FULFILL **/
 
     async fulfill(user: string, maxToDraw: number) {
         const tx = await this.contracts.pool.fulfillDraw(user, maxToDraw);
-        await tx.wait();
+        return await tx.wait();
     }
 }
 
@@ -149,24 +150,24 @@ export class PoolAdmin implements IPool {
 
     async updateFeeRecipient(newRecipient: string) {
         const tx = await this.contracts.pool.updateFeeRecipient(newRecipient);
-        await tx.wait();
+        return await tx.wait();
     }
 
     async updateDrawFee(newFee: string) {
         const newFeeBn = utils.parseEther(newFee);
         const tx = await this.contracts.pool.updateDrawFee(newFeeBn);
-        await tx.wait();
+        return await tx.wait();
     }
 
     async updateCreditFee(quantity: number, newFee: string) {
         const newFeeBn = utils.parseEther(newFee);
         const tx = await this.contracts.pool.updateCreditFee(quantity, newFeeBn);
-        await tx.wait();
+        return await tx.wait();
     }
 
     async refundUser(user: string) {
         const tx = await this.contracts.pool.refundUser(user);
-        await tx.wait();
+        return await tx.wait();
     }
 
     /** CREDITS **/
@@ -178,12 +179,12 @@ export class PoolAdmin implements IPool {
         const tx = await this.contracts.credits.mintCredits(
             user, tokenId, quantity
         );
-        await tx.wait();
+        return await tx.wait();
     }
 
     async setUris(tokenUri: string, contractUri: string) {
         const tx = await this.contracts.credits.setUris(tokenUri, contractUri);
-        await tx.wait();
+        return await tx.wait();
     }
 
     /** NFTDISPENSER **/
@@ -197,19 +198,38 @@ export class PoolAdmin implements IPool {
         const tx = await this.contracts.nftDispenser.setTier(
             nftAddress, tokenId, isErc1155, tier
         );
-        await tx.wait();
+        return await tx.wait();
+    }
+
+    async forceTransferNft(
+        nftAddress: string,
+        tokenId: BigNumberish,
+        isErc1155: boolean,
+        recipient: string
+    ) {
+        const tx = await this.contracts.nftDispenser.adminForceTransferNft(
+            nftAddress, tokenId, isErc1155, recipient
+        );
+        return await tx.wait();
+    }
+
+    async forceRemoveNft(nftAddress: string, tokenId: BigNumberish) {
+        const tx = await this.contracts.nftDispenser.adminForceRemoveNft(
+            nftAddress, tokenId
+        );
+        return await tx.wait();
     }
 
     /** VRFCLIENT **/
 
     async updateVrfFee(newFee: BigNumberish) {
         const tx = await this.contracts.vrfClient.updateFee(newFee);
-        await tx.wait();
+        return await tx.wait();
     }
 
     async updateKeyhash(keyhash: string) {
         const tx = await this.contracts.vrfClient.updateKeyhash(keyhash);
-        await tx.wait();
+        return await tx.wait();
     }
     
 }
@@ -300,5 +320,46 @@ export class PoolView implements IPool {
 
     async vrfKeyhash() {
         return await this.contracts.vrfClient.keyHash();
+    }
+
+    /** EVENTS **/
+
+    async getDispensedEvents(fromBlock?: number) {
+        const filter = this.contracts.nftDispenser.filters.Dispensed();
+        const events = await this.contracts.nftDispenser.queryFilter(filter, fromBlock);
+        return events.map(event => {
+            const {args, transactionHash, blockNumber} = event;
+            const [user, nftAddress, tokenId] = args;
+            return {user, nftAddress, tokenId, transactionHash, blockNumber};
+        });
+    }
+
+    private async _getPoolEvents(filter: TypedEventFilter<any, any>, fromBlock?: number) {
+        const events = await this.contracts.pool.queryFilter(filter, fromBlock);
+        return events.map(event => {
+            const {args, transactionHash, blockNumber} = event;
+            const [user, quantity] = args;
+            return {user, quantity, transactionHash, blockNumber};
+        });
+    }
+
+    async getReservedWithWethEvents(fromBlock?: number) {
+        const filter = this.contracts.pool.filters.ReservedWithWeth();
+        return await this._getPoolEvents(filter, fromBlock);
+    }
+
+    async getReservedWithCreditsEvents(fromBlock?: number) {
+        const filter = this.contracts.pool.filters.ReservedWithCredits();
+        return await this._getPoolEvents(filter, fromBlock);
+    }
+
+    async getBoughtCreditsEvents(fromBlock?: number) {
+        const filter = this.contracts.pool.filters.BoughtCredits();
+        return await this._getPoolEvents(filter, fromBlock);
+    }
+
+    async getReservationFulfilledEvents(fromBlock?: number) {
+        const filter = this.contracts.pool.filters.ReservationFulfilled();
+        return await this._getPoolEvents(filter, fromBlock);
     }
 }

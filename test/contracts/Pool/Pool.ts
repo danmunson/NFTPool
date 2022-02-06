@@ -18,7 +18,7 @@
 import { expect, assert } from "chai";
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 import { ethers } from "hardhat";
-import { Wallet, utils, BigNumber } from "ethers";
+import { Wallet, utils, BigNumber, BigNumberish } from "ethers";
 
 import {
     Credits,
@@ -179,7 +179,7 @@ describe('NFTPool', async () => {
         };
     }
 
-    async function fulfillRandom(random: number, requestId: string) {
+    async function fulfillRandom(random: BigNumberish, requestId: string) {
         await (
             await mocks.oracle.submitRandomness(sides.vrfClient.address, requestId, random)
         ).wait();
@@ -279,6 +279,8 @@ describe('NFTPool', async () => {
                     await pool.fulfillDraw(buyer.address, 0)
                 ).wait();
 
+                const newDrawsOccurred = (await pool.getReservationDetails(buyer.address))[2];
+                assert.strictEqual(newDrawsOccurred.toNumber(), 0);
                 const [_, randomSeed, computedRarities] = await pool.getPrivateReservationDetails(buyer.address);
                 assert.strictEqual(randomSeed.toNumber(), 2 ** 32 - 1);
                 assert.deepStrictEqual(computedRarities.map(x => x.toNumber()), [32, 0, 0, 0, 0, 0, 0, 0]);
@@ -401,7 +403,7 @@ describe('NFTPool', async () => {
             });
 
             // this test is dependent on the state created by the preceding test
-            it('setTier', async () => {
+            it('setTier && forceTransfer && forceRemove', async () => {
                 let activeTiers = await poolView.getActiveTiers();
                 let indexesAt0 = await poolView.getIndexesByTier(0);
                 let info = await poolView.getNftInfo(sides.credits.address, 1);
@@ -421,6 +423,41 @@ describe('NFTPool', async () => {
                 assert.deepStrictEqual(activeTiers, [true].concat(Array(32).fill(false)));
                 assert.strictEqual(indexesAt0.toNumber(), 1);
                 assert.strictEqual(info.quantity, 100);
+
+                // force remove
+                await poolAdmin.forceRemoveNft(sides.credits.address, 1);
+
+                activeTiers = await poolView.getActiveTiers();
+                indexesAt0 = await poolView.getIndexesByTier(0);
+                info = await poolView.getNftInfo(sides.credits.address, 1);
+                assert.deepStrictEqual(activeTiers, Array(33).fill(false));
+                assert.strictEqual(indexesAt0.toNumber(), 0);
+                assert.strictEqual(info.quantity, 0);
+
+                // reset in final tier
+                await poolAdmin.setTier(sides.credits.address, 1, true, 32);
+
+                activeTiers = await poolView.getActiveTiers();
+                let indexesAt32 = await poolView.getIndexesByTier(32);
+                info = await poolView.getNftInfo(sides.credits.address, 1);
+                assert.deepStrictEqual(activeTiers, Array(32).fill(false).concat([true]));
+                assert.strictEqual(indexesAt32.toNumber(), 1);
+                assert.strictEqual(info.quantity, 100);
+
+                // check that main has no credits
+                assert.strictEqual((await sides.credits.balanceOf(main.address, 1)).toNumber(), 0);
+
+                // force transfer
+                await poolAdmin.forceTransferNft(sides.credits.address, 1, true, main.address);
+
+                activeTiers = await poolView.getActiveTiers();
+                indexesAt32 = await poolView.getIndexesByTier(32);
+                info = await poolView.getNftInfo(sides.credits.address, 1);
+                assert.deepStrictEqual(activeTiers, Array(33).fill(false));
+                assert.strictEqual(indexesAt32.toNumber(), 0);
+                assert.strictEqual(info.quantity, 0);
+                // check that main has the credits
+                assert.strictEqual((await sides.credits.balanceOf(main.address, 1)).toNumber(), 100);
             });
 
             it('update vrf', async () => {
@@ -460,21 +497,193 @@ describe('NFTPool', async () => {
                 poolRelay = await PoolIxFactory.makePoolRelay();
             });
 
-            it('initiateDrawWithWeth');
-            it('initiateDrawWithCredits');
-            it('buyCredits');
+            it('initiateDrawWithWeth', async () => {
+                const quantity = 2;
+                const {fsig, r, s, v} = await getTransferParameters('1.0', quantity);
+                await poolRelay.drawWithWeth(buyer.address, quantity, fsig, r, s, v);
+
+                const reservation = await poolView.getReservation(buyer.address);
+                assert.strictEqual(reservation.user, buyer.address);
+                assert.strictEqual(reservation.quantity.toNumber(), quantity);
+                assert.strictEqual(reservation.drawsOccurred.toNumber(), 0);
+
+                const reservedLogs = await poolView.getReservedWithWethEvents();
+                assert.deepStrictEqual(
+                    reservedLogs.map(l => [l.user, l.quantity.toNumber()]),
+                    [[buyer.address, quantity]]
+                );
+            });
+
+            it('initiateDrawWithCredits', async () => {
+                // mint credits for user
+                await poolAdmin.mintCredits(buyer.address, 6, 10);
+                await poolAdmin.mintCredits(buyer.address, 3, 10);
+
+                const quantity = 1;
+                await poolRelay.drawWithCredits(buyer.address, quantity, [6, 3], [1, 2]);
+
+                const reservation = await poolView.getReservation(buyer.address);
+                assert.strictEqual(reservation.user, buyer.address);
+                assert.strictEqual(reservation.quantity.toNumber(), quantity);
+                assert.strictEqual(reservation.drawsOccurred.toNumber(), 0);
+
+                const balances = await poolView.getCreditsBalance(buyer.address);
+                assert.strictEqual(balances[6], 10 - 1);
+                assert.strictEqual(balances[3], 10 - 2);
+
+                const reservedLogs = await poolView.getReservedWithCreditsEvents();
+                assert.deepStrictEqual(
+                    reservedLogs.map(l => [l.user, l.quantity.toNumber()]),
+                    [[buyer.address, quantity]]
+                );
+            });
+
+            it('buyCredits', async () => {
+                // set credit fee
+                const creditQty = 10;
+                await poolAdmin.updateCreditFee(creditQty, '0.5');
+                const {fsig, r, s, v} = await getTransferParameters('0.5', creditQty);
+                await poolRelay.buyCredits(buyer.address, creditQty, fsig, r, s, v);
+
+                const balances = await poolView.getCreditsBalance(buyer.address);
+                assert.strictEqual(balances[12], 10);
+
+                const reservedLogs = await poolView.getBoughtCreditsEvents();
+                assert.deepStrictEqual(
+                    reservedLogs.map(l => [l.user, l.quantity.toNumber()]),
+                    [[buyer.address, 10]]
+                );
+            });
 
             describe('fulfillDraw', async () => {
+                async function drawAndSetRandom(quantity: number, random: BigNumberish) {
+                    const {fsig, r, s, v} = await getTransferParameters('1.0', quantity);
+                    await poolRelay.drawWithWeth(buyer.address, quantity, fsig, r, s, v);
 
-                it('user can receive credits as defaults');
+                    const {requestId} = await poolView.getReservation(buyer.address);
+                    await fulfillRandom(random, requestId);
+                }
+
+                type NFTSetting = {
+                    ix: 'erc721'|'erc1155'|'credits',
+                    tokenId: number,
+                    qty: number,
+                    tier: number
+                }
+
+                async function setupNfts(settings: NFTSetting[]) {
+                    for (const {ix, tokenId, qty, tier} of settings) {
+                        switch (ix) {
+                            case 'erc721':
+                                await mocks.erc721.mint(tokenId);
+                                await mocks.erc721.transferFrom(
+                                    main.address, sides.nftDispenser.address, tokenId
+                                );
+                                await poolAdmin.setTier(
+                                    mocks.erc721.address, tokenId, false, tier
+                                );
+                                break;
+                            case 'erc1155':
+                                for (let i = 0; i < qty; i++) {
+                                    await mocks.erc1155.mint(tokenId);
+                                }
+                                await mocks.erc1155.safeTransferFrom(
+                                    main.address, sides.nftDispenser.address, tokenId, qty, '0x'
+                                );
+                                await poolAdmin.setTier(
+                                    mocks.erc1155.address, tokenId, true, tier
+                                );
+                                break;
+                            case 'credits':
+                                await poolAdmin.mintCredits(
+                                    sides.nftDispenser.address, tokenId, qty
+                                );
+                                await poolAdmin.setTier(
+                                    sides.credits.address, tokenId, true, tier
+                                );
+                                break;
+                        }
+                    }
+                }
+                
+                it('emits expected events', async () => {
+                    await setupNfts([
+                        {ix: 'erc1155', tokenId: 100, qty: 2, tier: 0}
+                    ]);
+                    await drawAndSetRandom(2, 1);
+                    await poolRelay.fulfill(buyer.address, 2);
+
+                    const dispenseLogs = await poolView.getDispensedEvents();
+                    assert.deepStrictEqual(
+                        dispenseLogs.map(l => `${l.user}|${l.nftAddress}|${l.tokenId.toNumber()}`),
+                        Array(2).fill(`${buyer.address}|${mocks.erc1155.address}|${100}`)
+                    );
+
+                    const resFulfilledLogs = await poolView.getReservationFulfilledEvents();
+                    assert.deepStrictEqual(
+                        resFulfilledLogs.map(l => [l.user, l.quantity.toNumber()]),
+                        [[buyer.address, 2]]
+                    );
+                });
 
                 // test both "maxToDraw" limit and "drawsOccurred" limit
-                it('a draw can be fulfilled over multiple rounds');
+                // test that drawing not possible if default tier is empty
+                //      - drawing can resume once deck is reloaded
+                it('multi-round fulfillment; default tier guaranteed');
 
-                it('user can receive erc721s and erc1155s');
+                // confirm that the ordering is exactly as expected
+                it('user can receive erc721s, erc1155s, and credits');
 
-                // test that drawing can resume once deck is reloaded
-                it('will not draw if tier 0 is empty')
+                // check gas used!
+                // tx.wait().getTransactionReceipt().gasUsed;
+                //
+                // also, use nfts that do events
+                it('stress test - draw 8x, all 32 tier', async () => {
+                    // set default tier to have 1000 credits
+                    await poolAdmin.mintCredits(sides.nftDispenser.address, 1, 1000);
+                    await poolAdmin.setTier(sides.credits.address, 1, true, 0);
+
+                    // random number, 2**256 - 1
+                    const unfuckinbelievable = '0x' + Array(64).fill('f').join('');
+                    await drawAndSetRandom(8, unfuckinbelievable);
+
+                    const res = await poolRelay.fulfill(buyer.address, 8);
+                    console.log('Stress test gas consumption:', res.gasUsed.toNumber());
+
+                    const balance = await poolView.getCreditsBalance(buyer.address);
+                    assert.strictEqual(balance[1], 8);
+                    // gas usage is expected to be 944078
+                    assert.isBelow(res.gasUsed.toNumber(), 10 ** 6);
+
+                    const {user, quantity} = await poolView.getReservation(buyer.address);
+                    assert.strictEqual(quantity.toNumber(), 0);
+                    assert.strictEqual(user, '0x' + Array(20 * 2).fill('0').join(''));
+
+                    // check reservation logs
+                    const reservedLogs = await poolView.getReservedWithWethEvents();
+                    assert.deepStrictEqual(
+                        reservedLogs.map(l => [l.user, l.quantity.toNumber()]),
+                        [[buyer.address, 8]]
+                    );
+
+                    // check dispense logs
+                    const dispenseLogs = await poolView.getDispensedEvents();
+                    assert.strictEqual(dispenseLogs.length, 8);
+                    assert(dispenseLogs.every(l => {
+                        return (
+                            l.user === buyer.address &&
+                            l.nftAddress === sides.credits.address &&
+                            l.tokenId.toNumber() === 1
+                        );
+                    }));
+
+                    // check fulfilled logs
+                    const resFulfilledLogs = await poolView.getReservationFulfilledEvents();
+                    assert.deepStrictEqual(
+                        resFulfilledLogs.map(l => [l.user, l.quantity.toNumber()]),
+                        [[buyer.address, 8]]
+                    );
+                });
             });
         });
     });

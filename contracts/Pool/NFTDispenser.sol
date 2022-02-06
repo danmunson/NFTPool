@@ -23,6 +23,8 @@ contract NFTDispenser is SecurityBase {
     // tracks the tier that each nft belongs to
     bytes32[][33] internal nftRefsByTier;
 
+    event Dispensed(address user, address nft, uint256 tokenId);
+
     constructor(address _eoaAdmin, address _contractAdmin) {
         eoaAdmin = _eoaAdmin;
         contractAdmin = _contractAdmin;
@@ -83,8 +85,11 @@ contract NFTDispenser is SecurityBase {
 
         // transfer and remove NFT
         bool transferred = transferOwnership(nft.addr, nft.tokenId, nft.isErc1155, _to, false);
-        subtractiveUpdate(ref, false);
+        if (transferred) {
+            emit Dispensed(_to, nft.addr, nft.tokenId);
+        }
 
+        subtractiveUpdate(ref, false);
         return transferred;
     }
 

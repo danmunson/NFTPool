@@ -21,6 +21,11 @@ contract Pool is SecurityBase {
 
     uint256 public constant MAX_SLICES = 8;
 
+    event ReservedWithWeth(address user, uint256 quantity);
+    event ReservedWithCredits(address user, uint256 quantity);
+    event BoughtCredits(address user, uint256 quantity);
+    event ReservationFulfilled(address user, uint256 quantity);
+
     struct Reservation {
         address user;
         uint256 quantity;
@@ -119,6 +124,7 @@ contract Pool is SecurityBase {
         );
 
         _initiateDraw(_user, _quantity);
+        emit ReservedWithWeth(_user, _quantity);
     }
 
     /*
@@ -136,7 +142,9 @@ contract Pool is SecurityBase {
         _validateDraw(_user, _quantity);
         // will also check to see that user has appropriate balance
         credits.spendCredits(_user, _quantity, _tokenIds, _amounts);
+
         _initiateDraw(_user, _quantity);
+        emit ReservedWithCredits(_user, _quantity);
     }
 
     /*
@@ -180,6 +188,7 @@ contract Pool is SecurityBase {
             credits.threshold(),
             _quantity
         );
+        emit BoughtCredits(_user, _quantity);
     }
 
     /*
@@ -188,7 +197,7 @@ contract Pool is SecurityBase {
     _maxToDraw provides a mechanism for breaking up fulfillment into multiple transactions
     in case gas limits become a problem.
     */
-    function fulfillDraw(address _user, uint256 _maxToDraw) external {
+    function fulfillDraw(address _user, uint256 _maxToDraw) external noReentry {
         // perform preprocessing if necessary
         _preprocessFulfillDraw(_user);
 
@@ -212,11 +221,17 @@ contract Pool is SecurityBase {
             }
 
             uint256 rarity = res.computedRarities[res.drawsOccurred];
-            (uint256 tier, uint256 index) = _getNftSelectors(rarity, res.randomSeed);
-            // send over the NFT!
-            nftDispenser.dispenseNft(tier, index, _user);
+            (uint256 tier, uint256 index) = _getNftSelectors(
+                rarity,
+                res.randomSeed,
+                res.drawsOccurred
+            );
 
-            res.drawsOccurred += 1;
+            // send over the NFT!
+            bool success = nftDispenser.dispenseNft(tier, index, _user);
+            if (success) {
+                res.drawsOccurred += 1;
+            }
         }
 
         _postprocessFulfillDraw(_user);
@@ -282,6 +297,7 @@ contract Pool is SecurityBase {
 
         // if user has drawn AS MUCH AS they are allowed...
         if (res.drawsOccurred >= res.quantity) {
+            emit ReservationFulfilled(_user, res.quantity);
             delete reservations[_user];
         }
     }
@@ -310,7 +326,8 @@ contract Pool is SecurityBase {
 
     function _getNftSelectors(
         uint256 rarity,
-        uint256 randomSeed
+        uint256 randomSeed,
+        uint256 drawNumber
     ) internal view returns (uint256, uint256) {
 
         bool[33] memory activeTiers = nftDispenser.getActiveTiers();
@@ -320,7 +337,11 @@ contract Pool is SecurityBase {
             if (activeTiers[rarity - i]) break;
         }
 
-        uint256 index = randomSeed % nftDispenser.getIndexesByTier(selectedTier);
+        uint256 indexesInTier = nftDispenser.getIndexesByTier(selectedTier);
+        // * adding in the draw number makes it less likely
+        //      that the same NFT will be dispensed continuously
+        // * shifting right prevents overflow
+        uint256 index = ((randomSeed >> 1) + drawNumber) % indexesInTier; 
         return (selectedTier, index);
     }
 
