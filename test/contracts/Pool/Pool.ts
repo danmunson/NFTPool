@@ -678,10 +678,6 @@ describe('NFTPool', async () => {
                         return {erc721: b721, erc1155: b1155, credits: bcreds};
                     }
 
-                    /**
-                     * Rounds:
-                     *  (1) 
-                     */
                     await setupNfts([
                         {ix: 'credits', tokenId: 1, qty: 1, tier: 0}, // set at tier 0
                         {ix: 'erc1155', tokenId: 1, qty: 1, tier: 8}, // set at tier 8
