@@ -139,6 +139,7 @@ contract Pool is SecurityBase {
         uint256[] memory _amounts
     ) external noReentry {
 
+        _requireUserOrEoaAdmin(_user);
         _validateDraw(_user, _quantity);
         // will also check to see that user has appropriate balance
         credits.spendCredits(_user, _quantity, _tokenIds, _amounts);
@@ -407,6 +408,10 @@ contract Pool is SecurityBase {
             address(vrfClient),
             address(wethManager)
         );
+    }
+
+    function getNftDispenserAddress() external view returns (address) {
+        return address(nftDispenser);
     }
 
     /********* ADMIN *********/

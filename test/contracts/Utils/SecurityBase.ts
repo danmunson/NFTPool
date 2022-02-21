@@ -64,6 +64,18 @@ describe('SecurityBase', async () => {
         ).to.be.revertedWith('Must be admin');
     });
 
+    it('userOrAdmin', async () => {
+        let shouldBeTrue = await secureContract.connect(eoa).userOrAdmin(alt.address);
+        assert.strictEqual(shouldBeTrue, true);
+
+        shouldBeTrue = await secureContract.connect(alt).userOrAdmin(alt.address);
+        assert.strictEqual(shouldBeTrue, true);
+
+        await expect(
+            secureContract.connect(contractAdmin).userOrAdmin(alt.address)
+        ).to.be.revertedWith('Must be user or eoaAdmin');
+    });
+
     it('isContract', async () => {
         const shouldBeTrue = await secureContract.isContract();
         assert.strictEqual(shouldBeTrue, true);

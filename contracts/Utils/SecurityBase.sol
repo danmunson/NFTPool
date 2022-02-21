@@ -31,6 +31,13 @@ abstract contract SecurityBase {
         _;
     }
 
+    function _requireUserOrEoaAdmin(address user) internal view {
+        require(
+            msg.sender == user || msg.sender == eoaAdmin,
+            "Must be user or eoaAdmin"
+        );
+    }
+
     function _isContract(address addr) internal view returns (bool) {
         // credit @ppenzepplin Address.sol
         // will not work if address was sourced via an external call

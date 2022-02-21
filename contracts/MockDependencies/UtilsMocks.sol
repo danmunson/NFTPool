@@ -66,6 +66,11 @@ contract Secured is SecurityBase {
         return true;
     }
 
+    function userOrAdmin(address _user) external view returns (bool) {
+        _requireUserOrEoaAdmin(_user);
+        return true;
+    }
+
     function isContract() external view returns (bool) {
         return _isContract(address(maliciousContract));
     }
