@@ -4,7 +4,9 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "npx hardhat test"
+    "test": "npx hardhat test",
+    "dryrun": "NETWORK_KEY=mumbai MUMBAI_KEY=$(pbpaste) npx hardhat run --network mumbai scripts/dryrun.ts",
+    "deploy:mumbai": "NETWORK_KEY=mumbai MUMBAI_KEY=$(pbpaste) npx hardhat run --network mumbai scripts/deploy.ts"
   },
   "keywords": [],
   "author": "",
