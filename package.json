@@ -5,8 +5,9 @@
   "main": "index.js",
   "scripts": {
     "test": "npx hardhat test",
-    "dryrun": "NETWORK_KEY=mumbai MUMBAI_KEY=$(pbpaste) npx hardhat run --network mumbai scripts/dryrun.ts",
-    "deploy:mumbai": "NETWORK_KEY=mumbai MUMBAI_KEY=$(pbpaste) npx hardhat run --network mumbai scripts/deploy.ts"
+    "dryrun": "PRIVATE_KEY=$(cat .secret) NETWORK_KEY=mumbai npx hardhat run --network mumbai scripts/dryrun.ts",
+    "deploy:mumbai": "PRIVATE_KEY=$(cat .secret) NETWORK_KEY=mumbai npx hardhat run --network mumbai scripts/deploy.ts",
+    "admin:mumbai": "PRIVATE_KEY=$(cat .secret) NETWORK_KEY=mumbai ts-node admin/runCommand.ts"
   },
   "keywords": [],
   "author": "",
@@ -20,6 +21,7 @@
     "@types/chai": "^4.3.0",
     "@types/mocha": "^9.0.0",
     "@types/node": "^12.20.41",
+    "@types/yargs": "^17.0.8",
     "@typescript-eslint/eslint-plugin": "^4.33.0",
     "@typescript-eslint/parser": "^4.33.0",
     "chai": "^4.3.4",
@@ -46,7 +48,8 @@
   "dependencies": {
     "@chainlink/contracts": "^0.3.1",
     "@metamask/eth-sig-util": "^4.0.0",
-    "@openzeppelin/contracts": "^4.4.2"
+    "@openzeppelin/contracts": "^4.4.2",
+    "yargs": "^13.3.2"
   },
   "engines": {
     "node": ">=15.0.0"

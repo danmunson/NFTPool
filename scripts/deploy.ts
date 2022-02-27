@@ -1,5 +1,5 @@
 import {ethers} from "hardhat";
-import {DeploymentParams} from "./DeploymentParams";
+import {DeploymentParams} from "../params/deployment";
 
 const {NETWORK_KEY} = process.env;
 
