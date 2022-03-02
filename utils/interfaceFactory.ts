@@ -19,3 +19,10 @@ export async function getInterfaceFactory() {
         params.VRFCLIENT
     );
 }
+
+export async function getBlockNumber() {
+    const provider = getDefaultProvider(params.PROVIDER_URL);
+    await provider.ready;
+
+    return await provider.getBlockNumber();
+}
