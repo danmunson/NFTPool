@@ -20,5 +20,17 @@ module.exports = {
       "error",
       { ignores: ["modules"] },
     ],
+    "node/no-missing-import": [
+      "error",
+      {
+        tryExtensions: [".js", ".json", ".node", ".ts"],
+      },
+    ],
+    "node/no-unpublished-import": [
+      "error",
+      {
+        allowModules: ["ethers"],
+      },
+    ],
   },
 };

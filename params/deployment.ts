@@ -7,6 +7,7 @@ export const DeploymentParams: any = {
         DRAW_FEE: '0.002',
         CREDITS_TOKEN_URI: 'https://test.uri/token/{id}',
         CREDITS_CONTRACT_URI: 'https://test.uri/contract',
+        WETH_ADDRESS: '0x339c9c9Faa3e541eB048b1bB13d776B7Db85166E',
     },
     polygon: {}
 };
