@@ -17,6 +17,7 @@ const {
     DRAW_FEE,
     CREDITS_TOKEN_URI,
     CREDITS_CONTRACT_URI,
+    WETH_ADDRESS,
 } = DeploymentParams[NETWORK_KEY];
 
 // MUMBAI LINK FAUCET
@@ -53,7 +54,12 @@ async function main() {
 
     console.log(`SIGNER ADDRESS: ${mainAccount.address}\n`);
 
-    const {weth} = await deployMockDependencies();
+    let wethAddress = WETH_ADDRESS;
+    if (NETWORK_KEY !== 'polygon') {
+        const {weth} = await deployMockDependencies();
+        wethAddress = weth.address;
+    }
+    
 
     const NFTPool = await ethers.getContractFactory('Pool');
     const nftPool = await NFTPool.deploy(
@@ -66,7 +72,7 @@ async function main() {
         LINK_ADDRESS, // _linkTokenAddress
         ethers.utils.parseEther(FEE), // _vrfFee
         KEYHASH, // _vrfKeyHash
-        weth.address // _wethAddress
+        wethAddress // _wethAddress
     );
     await nftPool.deployed();
     console.log(`NFTPOOL: ${nftPool.address}`);
