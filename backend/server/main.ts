@@ -16,6 +16,6 @@ app.get('/fees', placeHolder);
 
 app.post('/userBalances', placeHolder);
 app.post('/currentUserState', placeHolder);
-// app.post('/userHistory', placeHolder);
+app.post('/userHistory', placeHolder);
 app.post('/userAction', placeHolder);
 

@@ -29,18 +29,19 @@ export type NFTData = {
 };
 
 export type NFT = NFTId & NFTData;
+export type InteractionStatus = 'pending'|'canFulfill'|'fulfilled'|'acked';
 
 export type UserInteractionEvent = {
     type: keyof typeof EventTypes,
     transaction: string,
     user: string,
     quantity: number,
-    fee: number,
+    fee: string, // decimal form of eth
     timestamp: number,
     fulfilled: boolean,
     qtyFulfilled: number,
-    fulfillmentTransactions: string[],
-    ackedByUser: boolean,
+    fulfillmentTransaction: string,
+    status: InteractionStatus,
 };
 
 export type FulfillEvent = {

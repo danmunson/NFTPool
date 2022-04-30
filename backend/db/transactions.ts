@@ -48,7 +48,7 @@ export async function registerFulfillment(fulfillment: FulfillEvent) {
         throw new Error(`No unfulfilled interaction exists for user ${user}`);
     }
 
-    liveUix.fulfillmentTransactions.push(transaction);
+    liveUix.fulfillmentTransaction = transaction;
     liveUix.qtyFulfilled += nfts.length;
     if (liveUix.qtyFulfilled === liveUix.quantity) {
         liveUix.fulfilled = true;

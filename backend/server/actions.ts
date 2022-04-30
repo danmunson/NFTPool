@@ -2,6 +2,16 @@ import {retry} from "./utils";
 import {getInterfaceFactory} from "../../utils/interfaceFactory";
 import {ContractReceipt} from "ethers";
 
+const pConnectionFactory = getInterfaceFactory();
+
+async function getInterfaces() {
+    const factory = await pConnectionFactory;
+    const [admin, relay, views] = await Promise.all([
+        factory.makePoolAdmin(), factory.makePoolRelay(), factory.makePoolView(),
+    ]);
+    return {admin, relay, views};
+}
+
 export async function submitWethDraw(
     user: string,
     quantity: number,
@@ -10,8 +20,7 @@ export async function submitWethDraw(
     sigS: string,
     sigV: number
 ) {
-    const factory = await getInterfaceFactory();
-    const relay = await factory.makePoolRelay();
+    const {relay} = await getInterfaces();
 
     const fn = async () => {
         return await relay.drawWithWeth(user, quantity, functionSignature, sigR, sigS, sigV);
@@ -56,8 +65,7 @@ export async function submitBuyCredits(
     sigS: string,
     sigV: number
 ) {
-    const factory = await getInterfaceFactory();
-    const relay = await factory.makePoolRelay();
+    const {relay} = await getInterfaces();
 
     const fn = async () => {
         return await relay.buyCredits(user, quantity, functionSignature, sigR, sigS, sigV);
@@ -73,9 +81,7 @@ export async function submitBuyCredits(
 }
 
 export async function submitFulfillDraw(user: string) {
-    const factory = await getInterfaceFactory();
-    const relay = await factory.makePoolRelay();
-    const views = await factory.makePoolView();
+    const {relay, views} = await getInterfaces();
 
     const reservation = await views.getReservation(user);
     const quantity = reservation.quantity.toNumber();
@@ -103,6 +109,16 @@ export async function submitFulfillDraw(user: string) {
     return {transactionHash, draws};
 }
 
-export async function getUserState() {
+export type userDeckStates = 'none'|'pending'|'canFulfill';
 
+export async function getUserState(user: string): Promise<userDeckStates> {
+    const {views} = await getInterfaces();
+    const reservation = await views.getReservation(user);
+    if (!reservation.quantity.toNumber()) {
+        return 'none';
+    } else if (reservation.randomSeed.toNumber() === 0) {
+        return 'pending';
+    } else {
+        return 'canFulfill';
+    }
 }
