@@ -10,8 +10,17 @@ type SQLModel = ModelCtor<Model<any, any>>;
 
 const {SQLITE_FILEPATH} = process.env;
 
-function basicType(dataType: keyof DataTypes, unique: boolean = false) {
-    return {type: DataTypes[dataType], allowNull: false, unique};
+function basicType(
+    dataType: keyof typeof DataTypes,
+    unique: boolean,
+    primaryKey: boolean = false,
+) {
+    return {
+        type: DataTypes[dataType],
+        allowNull: false,
+        unique, 
+        primaryKey,
+    };
 }
 
 async function getDBModels() {
@@ -22,7 +31,7 @@ async function getDBModels() {
 
     const models = {
         userInteractionEvent: sequelize.define('UserInteractionEvent', {
-            id: basicType('STRING', true),
+            id: basicType('STRING', true, true),
             type: basicType('STRING', false),
             transaction: basicType('STRING', true),
             user: basicType('STRING', false),
@@ -38,7 +47,7 @@ async function getDBModels() {
         }),
 
         fulfillEvent: sequelize.define('FulfillEvent', {
-            id: basicType('STRING', true),
+            id: basicType('STRING', true, true),
             user: basicType('STRING', false),
             nfts: basicType('STRING', false), // stringifed JSON
             timestamp: basicType('INTEGER', false),
@@ -48,7 +57,7 @@ async function getDBModels() {
         }),
 
         nft: sequelize.define('NFT', {
-            id: basicType('STRING', true),
+            id: basicType('STRING', true, true),
             address: basicType('STRING', false),
             token: basicType('STRING', false),
             rarity: basicType('INTEGER', false),
@@ -62,8 +71,8 @@ async function getDBModels() {
 
         // "singleton" table
         globalState: sequelize.define('GlobalState', {
-            id: basicType('STRING', true), // always '1'
-            lastSeenBlock: basicType('INTEGER', true),
+            id: basicType('STRING', true, true), // always '1'
+            drawFee: basicType('STRING', false),
         }),
     };
 
@@ -75,6 +84,7 @@ async function getDBModels() {
 interface Transformer<T> {
     toStorage(x: T): any;
     fromStorage(x: any): T;
+    getKey(x: T): string;
 }
 
 class BasicTransformer<T> implements Transformer<T> {
@@ -148,8 +158,6 @@ class FulfillEventTransformer extends BasicTransformer<FulfillEvent> {
     }
 }
 
-type asModel<T> = {save: () => Promise<void>} & T;
-
 class GetterSetter<T> {
     public model: SQLModel;
     public transformer: Transformer<T>;
@@ -159,30 +167,39 @@ class GetterSetter<T> {
         this.transformer = transformer;
     }
 
-    async get(where?: any): Promise<asModel<T>[]> {
+    async getData(where?: any): Promise<T[]> {
         where = where || {};
         const objects = await this.model.findAll({where});
-        return objects.map((obj: any) => this.transformer.fromStorage(obj));
+        return objects.map((obj: any) => this.transformer.fromStorage(obj.dataValues));
     }
 
-    // TODO -- this should ideally just be an upsert...
+    async getOne(minDetails: T): Promise<T> {
+        const id = this.transformer.getKey(minDetails);
+        const data = await this.getData({id});
+        return data.length ? data[0] : undefined;
+    }
+
+    async getModel(id: string): Promise<Model<T>> {
+        const models = await this.model.findAll({where: {id}});
+        return models.length ? models[0] : undefined;
+    }
+
     async set(obj: T) {
         const toSave = this.transformer.toStorage(obj);
-        const results = await this.get({id: toSave.id});
+        const model = await this.getModel(toSave.id);
 
-        if (results && results.length > 1) {
-            const savedObj = results[0];
+        if (model) {
             for (const key of Object.keys(toSave)) {
-                savedObj[key] = toSave[key];
+                model[key] = toSave[key];
             }
-            await savedObj.save();
+            await model.save();
         } else {
             await this.model.create(toSave);
         }
     }
 }
 
-export class Models {
+export class DbModelAccessor {
     public ready: Promise<any>;
     public userInteractionEvent: GetterSetter<UserInteractionEvent>;
     public nft: GetterSetter<NFT>;
