@@ -1,16 +1,15 @@
-import { Contract, Wallet, utils, BigNumberish } from 'ethers';
+import {Contract, Wallet, utils, BigNumberish} from 'ethers';
 import PoolInfo from '../artifacts/contracts/Pool/Pool.sol/Pool.json';
 import CreditsInfo from '../artifacts/contracts/Pool/Credits.sol/Credits.json';
 import NFTDispenserInfo from '../artifacts/contracts/Pool/NFTDispenser.sol/NFTDispenser.json';
 import VRFClientInfo from '../artifacts/contracts/Pool/VRFClient.sol/VRFClient.json';
-
 import {
     Credits,
     NFTDispenser,
     Pool,
     VRFClient
 } from '../typechain';
-import { TypedEventFilter } from '../typechain/common';
+import {TypedEventFilter} from '../typechain/common';
 
 type PoolContracts = {
     pool: Pool;
